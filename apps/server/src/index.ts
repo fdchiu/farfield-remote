@@ -230,6 +230,25 @@ function setRuntimeError(error: unknown): string {
   return message;
 }
 
+function setAppReady(next: boolean): void {
+  if (runtimeState.appReady === next) {
+    return;
+  }
+  runtimeState.appReady = next;
+  broadcastRuntimeState();
+}
+
+async function runAppServerCall<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    const result = await operation();
+    setAppReady(true);
+    return result;
+  } catch (error) {
+    setAppReady(false);
+    throw error;
+  }
+}
+
 function requireIpcReady(res: ServerResponse): boolean {
   if (runtimeState.ipcConnected && runtimeState.ipcInitialized) {
     return true;
@@ -392,7 +411,6 @@ ipcClient.onConnectionState((state) => {
   runtimeState.ipcConnected = state.connected;
   if (!state.connected) {
     runtimeState.ipcInitialized = false;
-    runtimeState.appReady = false;
   }
 
   if (state.reason) {
@@ -478,22 +496,23 @@ const server = http.createServer(async (req, res) => {
       const maxPages = parseInteger(url.searchParams.get("maxPages"), 20);
       const cursor = url.searchParams.get("cursor") ?? null;
 
-      const result = all
-        ? await appClient.listThreadsAll(
-            cursor
-              ? {
-                  limit,
-                  archived,
-                  cursor,
-                  maxPages
-                }
-              : {
-                  limit,
-                  archived,
-                  maxPages
-                }
-          )
-        : await appClient.listThreads(
+      const result = await runAppServerCall(() =>
+        all
+          ? appClient.listThreadsAll(
+              cursor
+                ? {
+                    limit,
+                    archived,
+                    cursor,
+                    maxPages
+                  }
+                : {
+                    limit,
+                    archived,
+                    maxPages
+                  }
+            )
+          : appClient.listThreads(
             cursor
               ? {
                   limit,
@@ -504,7 +523,8 @@ const server = http.createServer(async (req, res) => {
                   limit,
                   archived
                 }
-          );
+          )
+      );
 
       jsonResponse(res, 200, { ok: true, ...result });
       return;
@@ -512,13 +532,13 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && pathname === "/api/models") {
       const limit = parseInteger(url.searchParams.get("limit"), 100);
-      const result = await appClient.listModels(limit);
+      const result = await runAppServerCall(() => appClient.listModels(limit));
       jsonResponse(res, 200, { ok: true, ...result });
       return;
     }
 
     if (req.method === "GET" && pathname === "/api/collaboration-modes") {
-      const result = await appClient.listCollaborationModes();
+      const result = await runAppServerCall(() => appClient.listCollaborationModes());
       jsonResponse(res, 200, { ok: true, ...result });
       return;
     }
@@ -528,7 +548,7 @@ const server = http.createServer(async (req, res) => {
 
       if (req.method === "GET" && segments.length === 3) {
         const includeTurns = parseBoolean(url.searchParams.get("includeTurns"), true);
-        const result = await appClient.readThread(threadId, includeTurns);
+        const result = await runAppServerCall(() => appClient.readThread(threadId, includeTurns));
         jsonResponse(res, 200, { ok: true, ...result });
         return;
       }
@@ -935,6 +955,13 @@ async function bootstrapConnections(): Promise<void> {
 
   bootstrapInFlight = (async () => {
     try {
+      await runAppServerCall(() => appClient.listThreads({ limit: 1, archived: false }));
+    } catch (error) {
+      const errorMessage = setRuntimeError(error);
+      pushSystem("App-server bootstrap failed", { error: errorMessage });
+    }
+
+    try {
       if (!ipcClient.isConnected()) {
         await ipcClient.connect();
       }
@@ -951,18 +978,14 @@ async function bootstrapConnections(): Promise<void> {
         }
       }
 
-      await appClient.listThreads({ limit: 1, archived: false });
-      runtimeState.appReady = true;
-      runtimeState.lastError = null;
     } catch (error) {
-      runtimeState.appReady = false;
       runtimeState.ipcInitialized = false;
       if (!ipcClient.isConnected()) {
         runtimeState.ipcConnected = false;
       }
 
       const errorMessage = setRuntimeError(error);
-      pushSystem("Codex bootstrap failed", { error: errorMessage });
+      pushSystem("IPC bootstrap failed", { error: errorMessage });
     } finally {
       broadcastRuntimeState();
       bootstrapInFlight = null;
