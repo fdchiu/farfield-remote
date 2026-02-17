@@ -21,6 +21,7 @@ export interface ChildProcessAppServerTransportOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   requestTimeoutMs?: number;
+  onStderr?: (line: string) => void;
 }
 
 export class ChildProcessAppServerTransport implements AppServerTransport {
@@ -29,6 +30,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
   private readonly cwd: string | undefined;
   private readonly env: NodeJS.ProcessEnv | undefined;
   private readonly requestTimeoutMs: number;
+  private readonly onStderr: ((line: string) => void) | undefined;
   private process: ChildProcessWithoutNullStreams | null = null;
   private readonly pending = new Map<number, PendingRequest>();
   private requestId = 0;
@@ -41,6 +43,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
     this.cwd = options.cwd;
     this.env = options.env;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
+    this.onStderr = options.onStderr;
   }
 
   private ensureStarted(): void {
@@ -121,12 +124,18 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
       pending.resolve(message.result);
     });
 
-    child.stderr.on("data", (chunk) => {
-      const text = String(chunk).trim();
-      if (!text) {
+    const stderrReader = readline.createInterface({ input: child.stderr });
+    stderrReader.on("line", (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
         return;
       }
-      this.rejectAll(new AppServerError(`app-server stderr: ${text}`));
+
+      try {
+        this.onStderr?.(trimmed);
+      } catch {
+        // Never fail protocol requests because of stderr log handling.
+      }
     });
 
     this.process = child;
