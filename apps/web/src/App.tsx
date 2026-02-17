@@ -876,7 +876,7 @@ export function App(): React.JSX.Element {
                       const turnInProgress = isLastTurn && isGenerating;
                       const items = turn.items ?? [];
                       return (
-                        <div key={turn.turnId ?? ti} className="space-y-3">
+                        <div key={turn.turnId ?? ti} className="space-y-5">
                           {items.map((item, ii) => (
                             <ConversationItem
                               key={item.id ?? `${ti}-${ii}`}
