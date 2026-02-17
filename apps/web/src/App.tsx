@@ -348,6 +348,7 @@ export function App(): React.JSX.Element {
   const [planOpen, setPlanOpen] = useState(false);
   const [isChatAtBottom, setIsChatAtBottom] = useState(true);
   const [visibleChatItemLimit, setVisibleChatItemLimit] = useState(INITIAL_VISIBLE_CHAT_ITEMS);
+  const [suppressEntryAnimations, setSuppressEntryAnimations] = useState(false);
 
   /* Refs */
   const selectedThreadIdRef = useRef<string | null>(null);
@@ -596,6 +597,24 @@ export function App(): React.JSX.Element {
     setIsChatAtBottom(true);
     setVisibleChatItemLimit(INITIAL_VISIBLE_CHAT_ITEMS);
   }, [activeTab, selectedThreadId]);
+
+  // Prevent sliding animations when switching chats.
+  useEffect(() => {
+    setSuppressEntryAnimations(true);
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (!suppressEntryAnimations) return;
+    if (!selectedThreadId) {
+      setSuppressEntryAnimations(false);
+      return;
+    }
+    if (!liveState?.conversationState) return;
+    const timer = window.setTimeout(() => setSuppressEntryAnimations(false), 0);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [liveState?.conversationState, selectedThreadId, suppressEntryAnimations]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -941,7 +960,7 @@ export function App(): React.JSX.Element {
                     {selectedThreadId ? "No messages yet" : "Select a thread from the sidebar"}
                   </div>
                 ) : (
-                  <motion.div layout className="space-y-8">
+                  <motion.div layout={!suppressEntryAnimations} className="space-y-8">
                     {hasHiddenChatItems && (
                       <div className="flex justify-center">
                         <Button
@@ -964,13 +983,13 @@ export function App(): React.JSX.Element {
                       const turnInProgress = isLastTurn && isGenerating;
                       const items = turn.items ?? [];
                       return (
-                        <motion.div layout key={turn.turnId ?? turnIndex} className="space-y-5">
+                        <motion.div layout={!suppressEntryAnimations} key={turn.turnId ?? turnIndex} className="space-y-5">
                           <AnimatePresence initial={false}>
                           {visibleItems.map(({ item, itemIndexInTurn, globalItemIndex }) => (
                             <motion.div
-                              layout
+                              layout={!suppressEntryAnimations}
                               key={item.id ?? `${turnIndex}-${itemIndexInTurn}`}
-                              initial={{ opacity: 0, y: 12 }}
+                              initial={suppressEntryAnimations ? false : { opacity: 0, y: 12 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: -8 }}
                               transition={{ duration: 0.2, ease: "easeOut" }}
