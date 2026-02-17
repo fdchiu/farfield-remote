@@ -1237,7 +1237,7 @@ export function App(): React.JSX.Element {
                   </div>
 
                   {/* Toolbar */}
-                  <div className="flex flex-wrap items-center gap-1.5 px-1">
+                  <div className="flex items-center gap-1 min-w-0 overflow-x-auto overflow-y-hidden whitespace-nowrap">
                     <Button
                       type="button"
                       onClick={() => {
@@ -1250,7 +1250,7 @@ export function App(): React.JSX.Element {
                       }}
                       variant="ghost"
                       size="sm"
-                      className={`rounded-full text-xs ${
+                      className={`h-8 shrink-0 rounded-full px-2 text-xs ${
                         isPlanModeEnabled
                           ? "bg-blue-500/15 text-blue-600 hover:bg-blue-500/20 dark:text-blue-300"
                           : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
@@ -1265,7 +1265,7 @@ export function App(): React.JSX.Element {
                       onValueChange={(value) => setSelectedModelId(value === APP_DEFAULT_VALUE ? "" : value)}
                       disabled={!selectedThreadId}
                     >
-                      <SelectTrigger className="h-8 w-[146px] sm:w-[176px] rounded-full border-0 bg-transparent dark:bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-0">
+                      <SelectTrigger className="h-8 w-[132px] sm:w-[176px] shrink-0 rounded-full border-0 bg-transparent dark:bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-0">
                         <SelectValue placeholder="Model" />
                       </SelectTrigger>
                       <SelectContent position="popper">
@@ -1284,7 +1284,7 @@ export function App(): React.JSX.Element {
                       }
                       disabled={!selectedThreadId}
                     >
-                      <SelectTrigger className="h-8 w-[118px] sm:w-[148px] rounded-full border-0 bg-transparent dark:bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-0">
+                      <SelectTrigger className="h-8 w-[104px] sm:w-[148px] shrink-0 rounded-full border-0 bg-transparent dark:bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-0">
                         <SelectValue placeholder="Effort" />
                       </SelectTrigger>
                       <SelectContent position="popper">
@@ -1304,7 +1304,7 @@ export function App(): React.JSX.Element {
                       <Loader2 size={10} className={isModeSyncing ? "animate-spin" : ""} />
                     </span>
                     {pendingRequests.length > 0 && (
-                      <span className="text-xs text-amber-500 dark:text-amber-400">
+                      <span className="shrink-0 text-xs text-amber-500 dark:text-amber-400">
                         {pendingRequests.length} pending
                       </span>
                     )}
