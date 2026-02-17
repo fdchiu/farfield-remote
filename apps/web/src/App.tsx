@@ -17,7 +17,6 @@ import {
   Moon,
   PanelLeft,
   RefreshCcw,
-  Settings2,
   Sun,
   X
 } from "lucide-react";
@@ -44,7 +43,6 @@ import {
 } from "@/lib/api";
 import { useTheme } from "@/hooks/useTheme";
 import { ConversationItem } from "@/components/ConversationItem";
-import { PlanPanel } from "@/components/PlanPanel";
 import { DiffBlock } from "@/components/DiffBlock";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -58,6 +56,13 @@ import {
   TooltipProvider,
   TooltipTrigger
 } from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 
 /* ── Types ─────────────────────────────────────────────────── */
 type Health = Awaited<ReturnType<typeof getHealth>>;
@@ -96,6 +101,11 @@ function toErrorMessage(err: unknown): string {
 const DEFAULT_EFFORT_OPTIONS = ["minimal", "low", "medium", "high", "xhigh"] as const;
 const INITIAL_VISIBLE_CHAT_ITEMS = 180;
 const VISIBLE_CHAT_ITEMS_STEP = 120;
+const APP_DEFAULT_VALUE = "__app_default__";
+
+function isPlanModeOption(mode: { mode: string; name: string }): boolean {
+  return mode.mode.toLowerCase().includes("plan") || mode.name.toLowerCase().includes("plan");
+}
 
 function IconBtn({
   onClick,
@@ -331,7 +341,6 @@ export function App(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<"chat" | "debug">("chat");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
-  const [planOpen, setPlanOpen] = useState(false);
   const [isChatAtBottom, setIsChatAtBottom] = useState(true);
   const [visibleChatItemLimit, setVisibleChatItemLimit] = useState(INITIAL_VISIBLE_CHAT_ITEMS);
   const [suppressEntryAnimations, setSuppressEntryAnimations] = useState(false);
@@ -343,6 +352,7 @@ export function App(): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
   const chatContentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastAppliedModeSignatureRef = useRef("");
 
   /* Derived */
   const selectedThread = useMemo(
@@ -365,6 +375,15 @@ export function App(): React.JSX.Element {
     () => modes.find((m) => m.mode === selectedModeKey) ?? null,
     [modes, selectedModeKey]
   );
+  const planModeOption = useMemo(
+    () => modes.find((mode) => isPlanModeOption(mode)) ?? null,
+    [modes]
+  );
+  const defaultModeOption = useMemo(
+    () => modes.find((mode) => !isPlanModeOption(mode)) ?? modes[0] ?? null,
+    [modes]
+  );
+  const isPlanModeEnabled = planModeOption !== null && selectedModeKey === planModeOption.mode;
 
   const effortOptions = useMemo(() => {
     const vals = new Set<string>(DEFAULT_EFFORT_OPTIONS);
@@ -539,10 +558,18 @@ export function App(): React.JSX.Element {
     const cs = liveState?.conversationState;
     if (!cs) return;
     const lm = cs.latestCollaborationMode;
-    if (lm?.mode) setSelectedModeKey(lm.mode);
-    setSelectedModelId(lm?.settings.model ?? cs.latestModel ?? "");
-    setSelectedReasoningEffort(lm?.settings.reasoning_effort ?? cs.latestReasoningEffort ?? "");
-  }, [liveState]);
+    const nextModeKey = lm?.mode ?? selectedModeKey;
+    const nextModelId = lm?.settings.model ?? cs.latestModel ?? "";
+    const nextReasoningEffort = lm?.settings.reasoning_effort ?? cs.latestReasoningEffort ?? "";
+    if (nextModeKey) setSelectedModeKey(nextModeKey);
+    setSelectedModelId(nextModelId);
+    setSelectedReasoningEffort(nextReasoningEffort);
+    lastAppliedModeSignatureRef.current = `${nextModeKey}|${nextModelId}|${nextReasoningEffort}`;
+  }, [liveState, selectedModeKey]);
+
+  useEffect(() => {
+    lastAppliedModeSignatureRef.current = "";
+  }, [selectedThreadId]);
 
   // Track whether chat view is at the bottom.
   useEffect(() => {
@@ -661,6 +688,14 @@ export function App(): React.JSX.Element {
       setIsBusy(false);
     }
   }, [liveState?.ownerClientId, refreshAll, selectedMode, selectedModelId, selectedReasoningEffort, selectedThreadId]);
+
+  useEffect(() => {
+    if (!selectedThreadId || !selectedMode) return;
+    const signature = `${selectedMode.mode}|${selectedModelId}|${selectedReasoningEffort}`;
+    if (signature === lastAppliedModeSignatureRef.current) return;
+    lastAppliedModeSignatureRef.current = signature;
+    void applyMode();
+  }, [applyMode, selectedMode, selectedModelId, selectedReasoningEffort, selectedThreadId]);
 
   const submitPendingRequest = useCallback(async () => {
     if (!selectedThreadId || !activeRequest) return;
@@ -1079,27 +1114,6 @@ export function App(): React.JSX.Element {
                   )}
                 </AnimatePresence>
 
-                {/* Plan panel */}
-                <AnimatePresence>
-                  {planOpen && (
-                    <PlanPanel
-                      modes={modes}
-                      modelOptions={modelOptions}
-                      effortOptions={effortOptions}
-                      selectedModeKey={selectedModeKey}
-                      selectedModelId={selectedModelId}
-                      selectedReasoningEffort={selectedReasoningEffort}
-                      onModeChange={setSelectedModeKey}
-                      onModelChange={setSelectedModelId}
-                      onEffortChange={setSelectedReasoningEffort}
-                      onApply={() => void applyMode()}
-                      isBusy={isBusy}
-                      hasThread={!!selectedThreadId}
-                      hasMode={!!selectedMode}
-                    />
-                  )}
-                </AnimatePresence>
-
                 {/* Composer */}
                 <div className="flex flex-col gap-2">
                   <div className="flex items-end gap-2 rounded-2xl border border-border bg-card px-4 py-3 focus-within:border-muted-foreground/40 transition-colors">
@@ -1133,21 +1147,64 @@ export function App(): React.JSX.Element {
                   </div>
 
                   {/* Toolbar */}
-                  <div className="flex items-center gap-2 px-1">
+                  <div className="flex flex-wrap items-center gap-2 px-1">
                     <Button
                       type="button"
-                      onClick={() => setPlanOpen((v) => !v)}
+                      onClick={() => {
+                        if (!planModeOption) return;
+                        if (isPlanModeEnabled) {
+                          setSelectedModeKey(defaultModeOption?.mode ?? selectedModeKey);
+                          return;
+                        }
+                        setSelectedModeKey(planModeOption.mode);
+                      }}
                       variant="ghost"
                       size="sm"
                       className={`rounded-full text-xs ${
-                        planOpen
+                        isPlanModeEnabled
                           ? "bg-muted text-foreground hover:bg-muted"
                           : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                       }`}
+                      disabled={!selectedThreadId || isBusy || !planModeOption}
                     >
-                      <Settings2 size={11} />
                       Plan mode
                     </Button>
+                    <Select
+                      value={selectedModelId || APP_DEFAULT_VALUE}
+                      onValueChange={(value) => setSelectedModelId(value === APP_DEFAULT_VALUE ? "" : value)}
+                      disabled={!selectedThreadId || isBusy}
+                    >
+                      <SelectTrigger className="h-8 w-[180px] rounded-full text-xs">
+                        <SelectValue placeholder="Model" />
+                      </SelectTrigger>
+                      <SelectContent position="popper">
+                        <SelectItem value={APP_DEFAULT_VALUE}>Model: app default</SelectItem>
+                        {modelOptions.map((option) => (
+                          <SelectItem key={option.id} value={option.id}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select
+                      value={selectedReasoningEffort || APP_DEFAULT_VALUE}
+                      onValueChange={(value) =>
+                        setSelectedReasoningEffort(value === APP_DEFAULT_VALUE ? "" : value)
+                      }
+                      disabled={!selectedThreadId || isBusy}
+                    >
+                      <SelectTrigger className="h-8 w-[165px] rounded-full text-xs">
+                        <SelectValue placeholder="Effort" />
+                      </SelectTrigger>
+                      <SelectContent position="popper">
+                        <SelectItem value={APP_DEFAULT_VALUE}>Effort: app default</SelectItem>
+                        {effortOptions.map((option) => (
+                          <SelectItem key={option} value={option}>
+                            {option}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     {pendingRequests.length > 0 && (
                       <span className="text-xs text-amber-500 dark:text-amber-400">
                         {pendingRequests.length} pending
