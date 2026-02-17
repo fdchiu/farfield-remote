@@ -408,6 +408,18 @@ export function App(): React.JSX.Element {
     if (selectedModelId && !map.has(selectedModelId)) map.set(selectedModelId, selectedModelId);
     return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
   }, [liveState?.conversationState?.latestModel, models, selectedModelId]);
+  const currentAppDefaultModelLabel = useMemo(() => {
+    const currentModelId = liveState?.conversationState?.latestModel;
+    if (!currentModelId) return "Model: app default";
+    const matched = modelOptions.find((option) => option.id === currentModelId);
+    const shown = matched?.label ?? currentModelId;
+    return `Model: app default (${shown})`;
+  }, [liveState?.conversationState?.latestModel, modelOptions]);
+  const currentAppDefaultEffortLabel = useMemo(() => {
+    const currentEffort = liveState?.conversationState?.latestReasoningEffort;
+    if (!currentEffort) return "Effort: app default";
+    return `Effort: app default (${currentEffort})`;
+  }, [liveState?.conversationState?.latestReasoningEffort]);
 
   const turns = liveState?.conversationState?.turns ?? [];
   const conversationItemCount = useMemo(
@@ -1178,7 +1190,7 @@ export function App(): React.JSX.Element {
                         <SelectValue placeholder="Model" />
                       </SelectTrigger>
                       <SelectContent position="popper">
-                        <SelectItem value={APP_DEFAULT_VALUE}>Model: app default</SelectItem>
+                        <SelectItem value={APP_DEFAULT_VALUE}>{currentAppDefaultModelLabel}</SelectItem>
                         {modelOptions.map((option) => (
                           <SelectItem key={option.id} value={option.id}>
                             {option.label}
@@ -1197,7 +1209,7 @@ export function App(): React.JSX.Element {
                         <SelectValue placeholder="Effort" />
                       </SelectTrigger>
                       <SelectContent position="popper">
-                        <SelectItem value={APP_DEFAULT_VALUE}>Effort: app default</SelectItem>
+                        <SelectItem value={APP_DEFAULT_VALUE}>{currentAppDefaultEffortLabel}</SelectItem>
                         {effortOptions.map((option) => (
                           <SelectItem key={option} value={option}>
                             {option}
