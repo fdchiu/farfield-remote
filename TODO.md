@@ -17,17 +17,17 @@ Only mark items done when they are fully complete and verified.
 
 ## Stage 2: Protocol Package (`packages/codex-protocol`)
 
-- [ ] Create strict Zod schemas for:
-  - [ ] IPC envelope and message types
-  - [ ] IPC thread stream events
-  - [ ] Thread state snapshots and patches
-  - [ ] Collaboration mode payloads
-  - [ ] User input request and response payloads
-  - [ ] App server thread, model, and mode shapes we depend on
-- [ ] Export inferred TypeScript types from schemas.
-- [ ] Export fail-fast parse helpers (no silent fallbacks).
-- [ ] Add unit tests for protocol parsing and validation.
-- [ ] Write protocol documentation in `packages/codex-protocol/README.md`.
+- [x] Create strict Zod schemas for:
+  - [x] IPC envelope and message types
+  - [x] IPC thread stream events
+  - [x] Thread state snapshots and patches
+  - [x] Collaboration mode payloads
+  - [x] User input request and response payloads
+  - [x] App server thread, model, and mode shapes we depend on
+- [x] Export inferred TypeScript types from schemas.
+- [x] Export fail-fast parse helpers (no silent fallbacks).
+- [x] Add unit tests for protocol parsing and validation.
+- [x] Write protocol documentation in `packages/codex-protocol/README.md`.
 
 ## Stage 3: API Package (`packages/codex-api`)
 

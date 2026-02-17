@@ -1,0 +1,158 @@
+import { describe, expect, it } from "vitest";
+import {
+  parseAppServerCollaborationModeListResponse,
+  parseIpcFrame,
+  parseThreadConversationState,
+  parseThreadStreamStateChangedBroadcast,
+  parseUserInputResponsePayload
+} from "../src/index.js";
+
+describe("codex-protocol schemas", () => {
+  it("parses a valid thread stream patches broadcast", () => {
+    const parsed = parseThreadStreamStateChangedBroadcast({
+      type: "broadcast",
+      method: "thread-stream-state-changed",
+      sourceClientId: "client-123",
+      version: 4,
+      params: {
+        conversationId: "thread-123",
+        type: "thread-stream-state-changed",
+        version: 4,
+        change: {
+          type: "patches",
+          patches: [
+            {
+              op: "add",
+              path: ["requests", 0],
+              value: {
+                method: "item/tool/requestUserInput",
+                id: 9,
+                params: {
+                  threadId: "thread-123",
+                  turnId: "turn-123",
+                  itemId: "item-123",
+                  questions: [
+                    {
+                      id: "question_a",
+                      header: "Scope",
+                      question: "Choose one",
+                      isOther: true,
+                      isSecret: false,
+                      options: [
+                        {
+                          label: "Option A",
+                          description: "Description A"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    });
+
+    expect(parsed.params.change.type).toBe("patches");
+  });
+
+  it("rejects invalid patch value for remove operation", () => {
+    expect(() =>
+      parseThreadStreamStateChangedBroadcast({
+        type: "broadcast",
+        method: "thread-stream-state-changed",
+        sourceClientId: "client-123",
+        version: 4,
+        params: {
+          conversationId: "thread-123",
+          type: "thread-stream-state-changed",
+          version: 4,
+          change: {
+            type: "patches",
+            patches: [
+              {
+                op: "remove",
+                path: ["requests", 0],
+                value: true
+              }
+            ]
+          }
+        }
+      })
+    ).toThrowError(/remove patches must not include value/);
+  });
+
+  it("parses thread conversation state with userInputResponse item", () => {
+    const parsed = parseThreadConversationState({
+      id: "thread-123",
+      turns: [
+        {
+          params: {
+            threadId: "thread-123",
+            input: [{ type: "text", text: "hello" }],
+            attachments: []
+          },
+          status: "completed",
+          items: [
+            {
+              id: "item-1",
+              type: "userInputResponse",
+              requestId: 12,
+              turnId: "turn-1",
+              questions: [{ id: "q", header: "H", question: "Q" }],
+              answers: { q: ["A"] },
+              completed: true
+            }
+          ]
+        }
+      ],
+      requests: []
+    });
+
+    expect(parsed.turns[0]?.items[0]?.type).toBe("userInputResponse");
+  });
+
+  it("parses generic ipc request frames", () => {
+    const parsed = parseIpcFrame({
+      type: "request",
+      requestId: 5,
+      method: "thread-follower-start-turn",
+      params: {
+        conversationId: "thread-123"
+      },
+      version: 1,
+      targetClientId: "client-1"
+    });
+
+    expect(parsed.type).toBe("request");
+  });
+
+  it("rejects malformed user input answer payload", () => {
+    expect(() =>
+      parseUserInputResponsePayload({
+        answers: {
+          q: {
+            answers: [""]
+          }
+        }
+      })
+    ).toThrowError(/String must contain at least 1 character/);
+  });
+
+  it("parses collaboration mode list response", () => {
+    const parsed = parseAppServerCollaborationModeListResponse({
+      data: [
+        {
+          name: "Plan",
+          mode: "plan",
+          model: null,
+          reasoning_effort: "medium",
+          developer_instructions: "Instructions"
+        }
+      ]
+    });
+
+    expect(parsed.data[0]?.mode).toBe("plan");
+  });
+});
