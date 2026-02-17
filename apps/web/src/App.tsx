@@ -1297,12 +1297,11 @@ export function App(): React.JSX.Element {
                       </SelectContent>
                     </Select>
                     <span
-                      className={`inline-flex w-[62px] items-center gap-1.5 text-xs text-muted-foreground transition-opacity ${
+                      className={`inline-flex w-3 items-center justify-center text-xs text-muted-foreground transition-opacity ${
                         isModeSyncing ? "opacity-100" : "opacity-0"
                       }`}
                     >
-                      <Loader2 size={11} className={isModeSyncing ? "animate-spin" : ""} />
-                      syncing
+                      <Loader2 size={10} className={isModeSyncing ? "animate-spin" : ""} />
                     </span>
                     {pendingRequests.length > 0 && (
                       <span className="text-xs text-amber-500 dark:text-amber-400">
