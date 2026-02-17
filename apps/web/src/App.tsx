@@ -344,6 +344,7 @@ export function App(): React.JSX.Element {
   const [isChatAtBottom, setIsChatAtBottom] = useState(true);
   const [visibleChatItemLimit, setVisibleChatItemLimit] = useState(INITIAL_VISIBLE_CHAT_ITEMS);
   const [suppressEntryAnimations, setSuppressEntryAnimations] = useState(false);
+  const [hasHydratedModeFromLiveState, setHasHydratedModeFromLiveState] = useState(false);
 
   /* Refs */
   const selectedThreadIdRef = useRef<string | null>(null);
@@ -479,7 +480,8 @@ export function App(): React.JSX.Element {
     });
     setSelectedModeKey((cur) => {
       if (cur) return cur;
-      return nm.data[0]?.mode ?? "";
+      const nonPlanDefault = nm.data.find((mode) => !isPlanModeOption(mode));
+      return nonPlanDefault?.mode ?? nm.data[0]?.mode ?? "";
     });
   }, []);
 
@@ -577,10 +579,12 @@ export function App(): React.JSX.Element {
     setSelectedModelId(nextModelId);
     setSelectedReasoningEffort(nextReasoningEffort);
     lastAppliedModeSignatureRef.current = `${nextModeKey}|${nextModelId}|${nextReasoningEffort}`;
+    setHasHydratedModeFromLiveState(true);
   }, [liveState, selectedModeKey]);
 
   useEffect(() => {
     lastAppliedModeSignatureRef.current = "";
+    setHasHydratedModeFromLiveState(false);
   }, [selectedThreadId]);
 
   // Track whether chat view is at the bottom.
@@ -702,12 +706,12 @@ export function App(): React.JSX.Element {
   }, [liveState?.ownerClientId, refreshAll, selectedMode, selectedModelId, selectedReasoningEffort, selectedThreadId]);
 
   useEffect(() => {
-    if (!selectedThreadId || !selectedMode) return;
+    if (!selectedThreadId || !selectedMode || !hasHydratedModeFromLiveState) return;
     const signature = `${selectedMode.mode}|${selectedModelId}|${selectedReasoningEffort}`;
     if (signature === lastAppliedModeSignatureRef.current) return;
     lastAppliedModeSignatureRef.current = signature;
     void applyMode();
-  }, [applyMode, selectedMode, selectedModelId, selectedReasoningEffort, selectedThreadId]);
+  }, [applyMode, hasHydratedModeFromLiveState, selectedMode, selectedModelId, selectedReasoningEffort, selectedThreadId]);
 
   const submitPendingRequest = useCallback(async () => {
     if (!selectedThreadId || !activeRequest) return;
