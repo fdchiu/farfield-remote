@@ -12,6 +12,30 @@ interface Props {
   item: TurnItem;
   isLast: boolean;
   turnIsInProgress: boolean;
+  previousItemType?: TurnItem["type"] | undefined;
+  nextItemType?: TurnItem["type"] | undefined;
+}
+
+const TOOL_BLOCK_TYPES: readonly TurnItem["type"][] = [
+  "commandExecution",
+  "fileChange",
+  "webSearch"
+];
+
+function isToolBlockType(type: TurnItem["type"] | undefined): boolean {
+  return type !== undefined && TOOL_BLOCK_TYPES.includes(type);
+}
+
+function toolBlockSpacingClass(
+  previousItemType: TurnItem["type"] | undefined,
+  nextItemType: TurnItem["type"] | undefined
+): string {
+  const previousIsTool = isToolBlockType(previousItemType);
+  const nextIsTool = isToolBlockType(nextItemType);
+  if (previousIsTool && nextIsTool) return "my-1";
+  if (previousIsTool) return "mt-1 mb-4";
+  if (nextIsTool) return "mt-4 mb-1";
+  return "my-4";
 }
 
 function readTextContent(content: UserMessageLikeItem["content"]): string {
@@ -21,8 +45,15 @@ function readTextContent(content: UserMessageLikeItem["content"]): string {
     .join("\n");
 }
 
-export function ConversationItem({ item, isLast, turnIsInProgress }: Props) {
+export function ConversationItem({
+  item,
+  isLast,
+  turnIsInProgress,
+  previousItemType,
+  nextItemType
+}: Props) {
   const isActive = isLast && turnIsInProgress;
+  const toolSpacing = toolBlockSpacingClass(previousItemType, nextItemType);
 
   /* ── User message ───────────────────────────────────── */
   if (item.type === "userMessage" || item.type === "steeringUserMessage") {
@@ -95,7 +126,7 @@ export function ConversationItem({ item, isLast, turnIsInProgress }: Props) {
   /* ── Command execution ──────────────────────────────── */
   if (item.type === "commandExecution") {
     return (
-      <div className="my-4">
+      <div className={toolSpacing}>
         <CommandBlock item={item} isActive={isActive} />
       </div>
     );
@@ -104,7 +135,7 @@ export function ConversationItem({ item, isLast, turnIsInProgress }: Props) {
   /* ── File change ────────────────────────────────────── */
   if (item.type === "fileChange") {
     return (
-      <div className="my-4">
+      <div className={toolSpacing}>
         <DiffBlock changes={item.changes} />
       </div>
     );
@@ -122,7 +153,7 @@ export function ConversationItem({ item, isLast, turnIsInProgress }: Props) {
   /* ── Web search ─────────────────────────────────────── */
   if (item.type === "webSearch") {
     return (
-      <div className="my-4 rounded-lg border border-border bg-muted/20 px-3 py-2">
+      <div className={`${toolSpacing} rounded-lg border border-border bg-muted/20 px-3 py-2`}>
         <div className="text-[10px] text-muted-foreground font-mono mb-1 uppercase tracking-wider">
           Web search
         </div>

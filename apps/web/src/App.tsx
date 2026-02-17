@@ -883,6 +883,8 @@ export function App(): React.JSX.Element {
                               item={item}
                               isLast={ii === items.length - 1}
                               turnIsInProgress={turnInProgress}
+                              previousItemType={items[ii - 1]?.type}
+                              nextItemType={items[ii + 1]?.type}
                             />
                           ))}
                         </div>
