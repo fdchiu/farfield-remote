@@ -365,12 +365,151 @@ function getKnownThreadOwnerClientId(threadId) {
   return threadOwnerClientById.get(threadId) || null;
 }
 
-function findLatestConversationStateSnapshot(threadId) {
-  if (!threadId) {
-    return null;
+function cloneJson(value) {
+  if (value === undefined) {
+    return undefined;
   }
-  for (let i = history.length - 1; i >= 0; i -= 1) {
-    const entry = history[i];
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizePatchIndex(value) {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === "string" && /^\d+$/.test(value)) {
+    return Number(value);
+  }
+  return null;
+}
+
+function applyThreadStreamPatch(targetState, patch) {
+  if (!targetState || typeof targetState !== "object") {
+    return;
+  }
+  if (!patch || typeof patch !== "object" || !Array.isArray(patch.path)) {
+    return;
+  }
+
+  const path = patch.path;
+  if (!path.length) {
+    return;
+  }
+
+  const [first, second] = path;
+
+  if (first === "requests") {
+    if (!Array.isArray(targetState.requests)) {
+      targetState.requests = [];
+    }
+
+    if (path.length === 1) {
+      if (patch.op === "remove") {
+        targetState.requests = [];
+        return;
+      }
+      const nextValue = cloneJson(patch.value);
+      targetState.requests = Array.isArray(nextValue) ? nextValue : [];
+      return;
+    }
+
+    const index = normalizePatchIndex(second);
+    if (!Number.isInteger(index)) {
+      return;
+    }
+
+    if (path.length === 2) {
+      if (patch.op === "remove") {
+        if (index >= 0 && index < targetState.requests.length) {
+          targetState.requests.splice(index, 1);
+        }
+        return;
+      }
+
+      const nextValue = cloneJson(patch.value);
+      if (nextValue === undefined) {
+        return;
+      }
+
+      if (patch.op === "add") {
+        const safeIndex = Math.max(0, Math.min(index, targetState.requests.length));
+        targetState.requests.splice(safeIndex, 0, nextValue);
+        return;
+      }
+
+      if (patch.op === "replace") {
+        targetState.requests[index] = nextValue;
+      }
+      return;
+    }
+
+    if (patch.op === "add" || patch.op === "replace" || patch.op === "remove") {
+      const request = targetState.requests[index];
+      if (!request || typeof request !== "object") {
+        return;
+      }
+
+      if (path.length === 3 && typeof path[2] === "string") {
+        const key = path[2];
+        if (patch.op === "remove") {
+          delete request[key];
+          return;
+        }
+        const valueForKey = cloneJson(patch.value);
+        if (valueForKey !== undefined) {
+          request[key] = valueForKey;
+        }
+        return;
+      }
+
+      if (path.length === 4 && path[2] === "params" && typeof path[3] === "string") {
+        if (!request.params || typeof request.params !== "object") {
+          request.params = {};
+        }
+        const key = path[3];
+        if (patch.op === "remove") {
+          delete request.params[key];
+          return;
+        }
+        const valueForKey = cloneJson(patch.value);
+        if (valueForKey !== undefined) {
+          request.params[key] = valueForKey;
+        }
+      }
+    }
+    return;
+  }
+
+  if (
+    (first === "latestCollaborationMode" ||
+      first === "latestModel" ||
+      first === "latestReasoningEffort") &&
+    path.length === 1
+  ) {
+    if (patch.op === "remove") {
+      delete targetState[first];
+      return;
+    }
+    targetState[first] = cloneJson(patch.value);
+  }
+}
+
+function buildThreadStreamDerivedState(threadId) {
+  if (!threadId) {
+    return {
+      conversationState: null,
+      ownerClientId: null
+    };
+  }
+
+  let ownerClientId = getKnownThreadOwnerClientId(threadId);
+  let conversationState = null;
+  let sawThreadEvent = false;
+
+  for (const entry of history) {
     if (
       entry.source !== "ipc" ||
       entry.direction !== "in" ||
@@ -379,29 +518,240 @@ function findLatestConversationStateSnapshot(threadId) {
     ) {
       continue;
     }
+
+    sawThreadEvent = true;
     const payload = getHistoryFullPayload(entry.id) || entry.payload || {};
+    if (typeof payload.sourceClientId === "string" && payload.sourceClientId.trim()) {
+      ownerClientId = payload.sourceClientId.trim();
+    }
+
     const params = payload.params && typeof payload.params === "object" ? payload.params : {};
     const change = params.change && typeof params.change === "object" ? params.change : {};
-    if (change.type !== "snapshot") {
+
+    if (change.type === "snapshot") {
+      const nextState = cloneJson(change.conversationState);
+      if (nextState && typeof nextState === "object") {
+        conversationState = nextState;
+      }
       continue;
     }
-    if (change.conversationState && typeof change.conversationState === "object") {
-      return change.conversationState;
+
+    if (change.type === "patches" && Array.isArray(change.patches)) {
+      if (!conversationState || typeof conversationState !== "object") {
+        conversationState = {
+          id: threadId,
+          turns: [],
+          requests: [],
+          latestCollaborationMode: null
+        };
+      }
+      for (const patch of change.patches) {
+        applyThreadStreamPatch(conversationState, patch);
+      }
+    }
+  }
+
+  if (!sawThreadEvent) {
+    return {
+      conversationState: null,
+      ownerClientId
+    };
+  }
+
+  return {
+    conversationState,
+    ownerClientId
+  };
+}
+
+function extractPendingUserInputRequests(conversationState) {
+  const requests = Array.isArray(conversationState?.requests)
+    ? conversationState.requests
+    : [];
+
+  return requests
+    .filter((request) => {
+      return (
+        request &&
+        typeof request === "object" &&
+        request.method === "item/tool/requestUserInput" &&
+        request.completed !== true &&
+        request.params &&
+        typeof request.params === "object" &&
+        Array.isArray(request.params.questions)
+      );
+    })
+    .map((request) => {
+      const params = request.params;
+      const questions = params.questions.map((question) => {
+        const options = Array.isArray(question?.options)
+          ? question.options.map((option) => ({
+              label: typeof option?.label === "string" ? option.label : "",
+              description: typeof option?.description === "string" ? option.description : ""
+            }))
+          : [];
+
+        return {
+          id: typeof question?.id === "string" ? question.id : "",
+          header: typeof question?.header === "string" ? question.header : "",
+          question: typeof question?.question === "string" ? question.question : "",
+          isOther: question?.isOther === true,
+          isSecret: question?.isSecret === true,
+          options
+        };
+      });
+
+      return {
+        requestId: request.id,
+        method: request.method,
+        completed: request.completed === true,
+        threadId: typeof params.threadId === "string" ? params.threadId : null,
+        turnId: typeof params.turnId === "string" ? params.turnId : null,
+        itemId: typeof params.itemId === "string" ? params.itemId : null,
+        questions
+      };
+    });
+}
+
+function findLatestTurnParamsTemplate(conversationState) {
+  const turns = Array.isArray(conversationState?.turns) ? conversationState.turns : [];
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    if (turns[i]?.params && typeof turns[i].params === "object") {
+      return turns[i].params;
     }
   }
   return null;
 }
 
-function buildTurnStartParamsTemplate(threadId, text, body = {}) {
-  const snapshot = findLatestConversationStateSnapshot(threadId);
-  const turns = Array.isArray(snapshot?.turns) ? snapshot.turns : [];
-  let template = null;
-  for (let i = turns.length - 1; i >= 0; i -= 1) {
-    if (turns[i]?.params && typeof turns[i].params === "object") {
-      template = turns[i].params;
-      break;
+function normalizeCollaborationModeValue(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  if (typeof value.mode !== "string" || !value.mode.trim()) {
+    return null;
+  }
+
+  const mode = value.mode.trim();
+  const settings =
+    value.settings && typeof value.settings === "object"
+      ? cloneJson(value.settings) || {}
+      : {};
+
+  return {
+    mode,
+    settings
+  };
+}
+
+function normalizeUserInputResponsePayload(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const sourceAnswers =
+    value.answers && typeof value.answers === "object" ? value.answers : null;
+  if (!sourceAnswers) {
+    return null;
+  }
+
+  const normalizedAnswers = {};
+  for (const [questionId, answerValue] of Object.entries(sourceAnswers)) {
+    if (typeof questionId !== "string" || !questionId.trim()) {
+      continue;
+    }
+
+    let answersArray = [];
+    if (typeof answerValue === "string") {
+      answersArray = [answerValue];
+    } else if (Array.isArray(answerValue)) {
+      answersArray = answerValue;
+    } else if (
+      answerValue &&
+      typeof answerValue === "object" &&
+      Array.isArray(answerValue.answers)
+    ) {
+      answersArray = answerValue.answers;
+    }
+
+    const cleaned = answersArray
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+
+    if (cleaned.length > 0) {
+      normalizedAnswers[questionId] = { answers: cleaned };
     }
   }
+
+  return { answers: normalizedAnswers };
+}
+
+function parseRequestIdValue(value) {
+  if (Number.isInteger(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+    return Number(value.trim());
+  }
+  return null;
+}
+
+function extractCollaborationModesList(result) {
+  if (Array.isArray(result?.data)) {
+    return result.data;
+  }
+  if (Array.isArray(result?.modes)) {
+    return result.modes;
+  }
+  return [];
+}
+
+function buildCollaborationModeFromCatalog(modeKey, modeList, conversationState) {
+  if (typeof modeKey !== "string" || !modeKey.trim()) {
+    return null;
+  }
+
+  const normalizedMode = modeKey.trim();
+  const modeEntry =
+    modeList.find((entry) => {
+      return entry && typeof entry === "object" && entry.mode === normalizedMode;
+    }) || null;
+
+  if (!modeEntry) {
+    const currentMode = normalizeCollaborationModeValue(
+      conversationState?.latestCollaborationMode
+    );
+    if (currentMode && currentMode.mode === normalizedMode) {
+      return currentMode;
+    }
+    return null;
+  }
+
+  const latestModel =
+    typeof conversationState?.latestModel === "string" && conversationState.latestModel.trim()
+      ? conversationState.latestModel.trim()
+      : null;
+  const latestReasoningEffort =
+    typeof conversationState?.latestReasoningEffort === "string" &&
+    conversationState.latestReasoningEffort.trim()
+      ? conversationState.latestReasoningEffort.trim()
+      : null;
+
+  return {
+    mode: normalizedMode,
+    settings: {
+      model: latestModel ?? modeEntry.model ?? null,
+      reasoning_effort: latestReasoningEffort ?? modeEntry.reasoning_effort ?? null,
+      developer_instructions:
+        typeof modeEntry.developer_instructions === "string"
+          ? modeEntry.developer_instructions
+          : modeEntry.developer_instructions ?? null
+    }
+  };
+}
+
+function buildTurnStartParamsTemplate(threadId, text, body = {}) {
+  const { conversationState } = buildThreadStreamDerivedState(threadId);
+  const template = findLatestTurnParamsTemplate(conversationState);
 
   if (!template) {
     throw new Error(
@@ -431,6 +781,12 @@ function buildTurnStartParamsTemplate(threadId, text, body = {}) {
   if (typeof body.summary === "string" && body.summary.trim()) {
     nextParams.summary = body.summary.trim();
   }
+
+  const explicitMode = normalizeCollaborationModeValue(body.collaborationMode);
+  if (explicitMode) {
+    nextParams.collaborationMode = explicitMode;
+  }
+
   if (!Array.isArray(nextParams.attachments)) {
     nextParams.attachments = [];
   }
@@ -1346,6 +1702,10 @@ class AppServerClient {
     return this.request("model/list", { limit });
   }
 
+  async listCollaborationModes() {
+    return this.request("collaborationMode/list", {});
+  }
+
   async findActiveTurn(threadId) {
     const trackedTurnId = this.activeTurnsByThread.get(threadId);
     if (trackedTurnId) {
@@ -1681,6 +2041,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && pathname === "/api/collaboration-modes") {
+    try {
+      const result = await appClient.listCollaborationModes();
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: toErrorMessage(error) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && pathname === "/api/thread/start") {
     let body;
     try {
@@ -1780,6 +2150,207 @@ const server = http.createServer(async (req, res) => {
         ownerClientId,
         events
       });
+      return;
+    }
+
+    if (req.method === "GET" && segments[3] === "live-state") {
+      const { conversationState, ownerClientId } = buildThreadStreamDerivedState(threadId);
+      const pendingUserInputRequests = extractPendingUserInputRequests(conversationState);
+      sendJson(res, 200, {
+        ok: true,
+        threadId,
+        ownerClientId,
+        latestCollaborationMode: conversationState?.latestCollaborationMode || null,
+        latestModel:
+          typeof conversationState?.latestModel === "string"
+            ? conversationState.latestModel
+            : null,
+        latestReasoningEffort:
+          typeof conversationState?.latestReasoningEffort === "string"
+            ? conversationState.latestReasoningEffort
+            : null,
+        pendingUserInputRequests
+      });
+      return;
+    }
+
+    if (req.method === "POST" && segments[3] === "collaboration-mode") {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (error) {
+        badRequest(res, toErrorMessage(error));
+        return;
+      }
+
+      const { conversationState } = buildThreadStreamDerivedState(threadId);
+      const ownerClientId = getKnownThreadOwnerClientId(threadId);
+      if (!ownerClientId) {
+        sendJson(res, 409, {
+          ok: false,
+          threadId,
+          error:
+            "No known owner client id for this thread yet. Open the thread in the desktop app first so stream events identify the owner."
+        });
+        return;
+      }
+
+      let collaborationMode = normalizeCollaborationModeValue(body.collaborationMode);
+      if (!collaborationMode) {
+        const modeKey = typeof body.mode === "string" ? body.mode.trim() : "";
+        if (!modeKey) {
+          badRequest(res, "mode is required");
+          return;
+        }
+        try {
+          const listResult = await appClient.listCollaborationModes();
+          const modeList = extractCollaborationModesList(listResult);
+          collaborationMode = buildCollaborationModeFromCatalog(
+            modeKey,
+            modeList,
+            conversationState
+          );
+        } catch (error) {
+          sendJson(res, 500, { ok: false, error: toErrorMessage(error) });
+          return;
+        }
+      }
+
+      if (!collaborationMode) {
+        sendJson(res, 409, {
+          ok: false,
+          threadId,
+          error:
+            "Could not resolve that collaboration mode. Reload mode data and try again."
+        });
+        return;
+      }
+
+      try {
+        const response = await ipcClient.sendRequestAndWait(
+          "thread-follower-set-collaboration-mode",
+          {
+            conversationId: threadId,
+            collaborationMode
+          },
+          {
+            targetClientId: ownerClientId,
+            versionOverride: 1,
+            timeoutMs: IPC_REQUEST_TIMEOUT_MS
+          }
+        );
+
+        sendJson(res, 200, {
+          ok: true,
+          path: "ipc-owner",
+          threadId,
+          ownerClientId,
+          collaborationMode,
+          response
+        });
+      } catch (error) {
+        const message = toErrorMessage(error);
+        if (message.includes("no-client-found")) {
+          threadOwnerClientById.delete(threadId);
+          sendJson(res, 409, {
+            ok: false,
+            threadId,
+            error:
+              "Owner client id is stale. Open the thread in the desktop app and try again."
+          });
+          return;
+        }
+        sendJson(res, 500, { ok: false, error: message });
+      }
+      return;
+    }
+
+    if (req.method === "POST" && segments[3] === "user-input") {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (error) {
+        badRequest(res, toErrorMessage(error));
+        return;
+      }
+
+      const requestId = parseRequestIdValue(body.requestId);
+      if (!Number.isInteger(requestId)) {
+        badRequest(res, "requestId is required");
+        return;
+      }
+
+      const ownerClientId = getKnownThreadOwnerClientId(threadId);
+      if (!ownerClientId) {
+        sendJson(res, 409, {
+          ok: false,
+          threadId,
+          error:
+            "No known owner client id for this thread yet. Open the thread in the desktop app first so stream events identify the owner."
+        });
+        return;
+      }
+
+      const { conversationState } = buildThreadStreamDerivedState(threadId);
+      const pendingUserInputRequests = extractPendingUserInputRequests(conversationState);
+      const matchingRequest = pendingUserInputRequests.find(
+        (request) => request.requestId === requestId
+      );
+      if (!matchingRequest) {
+        sendJson(res, 409, {
+          ok: false,
+          threadId,
+          error: "That requestId is not currently pending for this thread."
+        });
+        return;
+      }
+
+      let responsePayload = normalizeUserInputResponsePayload(body.response);
+      if (!responsePayload) {
+        responsePayload = normalizeUserInputResponsePayload({ answers: body.answers });
+      }
+      if (!responsePayload) {
+        badRequest(res, "response.answers is required");
+        return;
+      }
+
+      try {
+        const response = await ipcClient.sendRequestAndWait(
+          "thread-follower-submit-user-input",
+          {
+            conversationId: threadId,
+            requestId,
+            response: responsePayload
+          },
+          {
+            targetClientId: ownerClientId,
+            versionOverride: 1,
+            timeoutMs: IPC_REQUEST_TIMEOUT_MS
+          }
+        );
+
+        sendJson(res, 200, {
+          ok: true,
+          path: "ipc-owner",
+          threadId,
+          ownerClientId,
+          requestId,
+          response
+        });
+      } catch (error) {
+        const message = toErrorMessage(error);
+        if (message.includes("no-client-found")) {
+          threadOwnerClientById.delete(threadId);
+          sendJson(res, 409, {
+            ok: false,
+            threadId,
+            error:
+              "Owner client id is stale. Open the thread in the desktop app and try again."
+          });
+          return;
+        }
+        sendJson(res, 500, { ok: false, error: message });
+      }
       return;
     }
 

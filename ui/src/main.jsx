@@ -126,6 +126,16 @@ async function apiPost(path, body) {
   return data;
 }
 
+function normalizeCollaborationModesPayload(data) {
+  const raw = Array.isArray(data?.data)
+    ? data.data
+    : Array.isArray(data?.modes)
+      ? data.modes
+      : [];
+
+  return raw.filter((item) => item && typeof item === "object" && typeof item.mode === "string");
+}
+
 function StatusPill({ label, healthy, text }) {
   return (
     <span className={`pill ${healthy ? "good" : "bad"}`}>
@@ -151,6 +161,15 @@ function App() {
   const [streamEvents, setStreamEvents] = useState([]);
   const [streamOwnerClientId, setStreamOwnerClientId] = useState(null);
   const [streamLoading, setStreamLoading] = useState(false);
+  const [liveThreadState, setLiveThreadState] = useState(null);
+  const [liveThreadLoading, setLiveThreadLoading] = useState(false);
+  const [collaborationModes, setCollaborationModes] = useState([]);
+  const [collaborationModesLoading, setCollaborationModesLoading] = useState(false);
+  const [selectedMode, setSelectedMode] = useState("default");
+  const [applyingMode, setApplyingMode] = useState(false);
+  const [selectedUserInputRequestId, setSelectedUserInputRequestId] = useState(null);
+  const [userInputDraft, setUserInputDraft] = useState({});
+  const [submittingUserInput, setSubmittingUserInput] = useState(false);
 
   const [traceLabel, setTraceLabel] = useState("capture");
   const [traceNote, setTraceNote] = useState("");
@@ -173,6 +192,7 @@ function App() {
   const selectedThreadRefreshTimerRef = useRef(null);
   const threadListRefreshTimerRef = useRef(null);
   const streamEventsRefreshTimerRef = useRef(null);
+  const liveThreadStateRefreshTimerRef = useRef(null);
 
   const setError = useCallback((error) => {
     setErrorMessage(toErrorMessage(error));
@@ -193,6 +213,16 @@ function App() {
       active: data.active || null,
       recent: Array.isArray(data.recent) ? data.recent : []
     });
+  }, []);
+
+  const loadCollaborationModes = useCallback(async () => {
+    setCollaborationModesLoading(true);
+    try {
+      const data = await apiGet("/api/collaboration-modes");
+      setCollaborationModes(normalizeCollaborationModesPayload(data));
+    } finally {
+      setCollaborationModesLoading(false);
+    }
   }, []);
 
   const loadThreads = useCallback(async (options = {}) => {
@@ -305,6 +335,36 @@ function App() {
     }
   }, []);
 
+  const loadThreadLiveState = useCallback(async (threadId, options = {}) => {
+    const { silent = false } = options;
+    if (!threadId) {
+      setLiveThreadState(null);
+      return;
+    }
+
+    if (!silent) {
+      setLiveThreadLoading(true);
+    }
+    try {
+      const data = await apiGet(`/api/thread/${encodeURIComponent(threadId)}/live-state`);
+      setLiveThreadState({
+        latestCollaborationMode: data.latestCollaborationMode || null,
+        latestModel: data.latestModel || null,
+        latestReasoningEffort: data.latestReasoningEffort || null,
+        pendingUserInputRequests: Array.isArray(data.pendingUserInputRequests)
+          ? data.pendingUserInputRequests
+          : []
+      });
+      if (typeof data.ownerClientId === "string" && data.ownerClientId.trim()) {
+        setStreamOwnerClientId(data.ownerClientId.trim());
+      }
+    } finally {
+      if (!silent) {
+        setLiveThreadLoading(false);
+      }
+    }
+  }, []);
+
   const visibleTurnData = useMemo(() => {
     const turns = Array.isArray(selectedThread?.turns) ? selectedThread.turns : [];
     const clipped = turns.slice(-visibleTurns);
@@ -314,6 +374,26 @@ function App() {
       hasOlder: turns.length > clipped.length
     };
   }, [selectedThread, visibleTurns]);
+
+  const pendingUserInputRequests = useMemo(() => {
+    return Array.isArray(liveThreadState?.pendingUserInputRequests)
+      ? liveThreadState.pendingUserInputRequests
+      : [];
+  }, [liveThreadState]);
+
+  const activeUserInputRequest = useMemo(() => {
+    if (!pendingUserInputRequests.length) {
+      return null;
+    }
+    if (selectedUserInputRequestId === null || selectedUserInputRequestId === undefined) {
+      return pendingUserInputRequests[0];
+    }
+    return (
+      pendingUserInputRequests.find(
+        (request) => String(request.requestId) === String(selectedUserInputRequestId)
+      ) || pendingUserInputRequests[0]
+    );
+  }, [pendingUserInputRequests, selectedUserInputRequestId]);
 
   const replayCandidates = useMemo(() => {
     return rawEntries
@@ -331,6 +411,57 @@ function App() {
   const selectedReplayPayload = selectedReplayDetail?.fullPayload || null;
   const selectedReplayType = selectedReplayPayload?.type || null;
   const selectedReplayIsRequest = selectedReplayType === "request";
+
+  useEffect(() => {
+    const mode = liveThreadState?.latestCollaborationMode?.mode;
+    if (typeof mode === "string" && mode.trim()) {
+      setSelectedMode(mode.trim());
+      return;
+    }
+    if (!selectedThreadId) {
+      setSelectedMode("default");
+    }
+  }, [liveThreadState?.latestCollaborationMode?.mode, selectedThreadId]);
+
+  useEffect(() => {
+    if (!pendingUserInputRequests.length) {
+      setSelectedUserInputRequestId(null);
+      setUserInputDraft({});
+      return;
+    }
+
+    setSelectedUserInputRequestId((current) => {
+      if (
+        current !== null &&
+        pendingUserInputRequests.some((request) => String(request.requestId) === String(current))
+      ) {
+        return current;
+      }
+      return pendingUserInputRequests[0].requestId;
+    });
+  }, [pendingUserInputRequests]);
+
+  useEffect(() => {
+    if (!activeUserInputRequest) {
+      setUserInputDraft({});
+      return;
+    }
+
+    setUserInputDraft((current) => {
+      const next = {};
+      for (const question of Array.isArray(activeUserInputRequest.questions)
+        ? activeUserInputRequest.questions
+        : []) {
+        const previous = current[question.id] || {};
+        next[question.id] = {
+          selectedOptionId:
+            typeof previous.selectedOptionId === "string" ? previous.selectedOptionId : "",
+          freeformText: typeof previous.freeformText === "string" ? previous.freeformText : ""
+        };
+      }
+      return next;
+    });
+  }, [activeUserInputRequest]);
 
   useEffect(() => {
     selectedThreadIdRef.current = selectedThreadId;
@@ -398,6 +529,27 @@ function App() {
     [loadThreadStreamEvents]
   );
 
+  const scheduleLiveThreadStateRefresh = useCallback(
+    (threadId) => {
+      if (!threadId) {
+        return;
+      }
+      if (liveThreadStateRefreshTimerRef.current) {
+        clearTimeout(liveThreadStateRefreshTimerRef.current);
+      }
+      liveThreadStateRefreshTimerRef.current = setTimeout(() => {
+        liveThreadStateRefreshTimerRef.current = null;
+        if (selectedThreadIdRef.current !== threadId) {
+          return;
+        }
+        loadThreadLiveState(threadId, { silent: true }).catch(() => {
+          // Silent background retry.
+        });
+      }, THREAD_SYNC_DEBOUNCE_MS);
+    },
+    [loadThreadLiveState]
+  );
+
   const handleIncomingHistoryEntry = useCallback(
     (entry, options = {}) => {
       const { captureRaw = true } = options;
@@ -437,23 +589,29 @@ function App() {
         }
         scheduleThreadRefresh(threadId);
         scheduleStreamEventsRefresh(threadId);
+        scheduleLiveThreadStateRefresh(threadId);
       }
     },
-    [scheduleThreadListRefresh, scheduleThreadRefresh, scheduleStreamEventsRefresh]
+    [
+      scheduleLiveThreadStateRefresh,
+      scheduleThreadListRefresh,
+      scheduleThreadRefresh,
+      scheduleStreamEventsRefresh
+    ]
   );
 
   useEffect(() => {
     const run = async () => {
       try {
         clearError();
-        await Promise.all([loadState(), loadTraceStatus()]);
+        await Promise.all([loadState(), loadTraceStatus(), loadCollaborationModes()]);
       } catch (error) {
         setError(error);
       }
     };
 
     void run();
-  }, [clearError, loadState, loadTraceStatus, setError]);
+  }, [clearError, loadCollaborationModes, loadState, loadTraceStatus, setError]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -484,12 +642,18 @@ function App() {
     loadThreadStreamEvents(selectedThreadId).catch((error) => {
       setError(error);
     });
-  }, [loadSelectedThread, loadThreadStreamEvents, selectedThreadId, setError]);
+    loadThreadLiveState(selectedThreadId).catch((error) => {
+      setError(error);
+    });
+  }, [loadSelectedThread, loadThreadLiveState, loadThreadStreamEvents, selectedThreadId, setError]);
 
   useEffect(() => {
     if (!selectedThreadId) {
       setStreamOwnerClientId(null);
       setStreamEvents([]);
+      setLiveThreadState(null);
+      setSelectedUserInputRequestId(null);
+      setUserInputDraft({});
     }
   }, [selectedThreadId]);
 
@@ -548,6 +712,9 @@ function App() {
       if (streamEventsRefreshTimerRef.current) {
         clearTimeout(streamEventsRefreshTimerRef.current);
       }
+      if (liveThreadStateRefreshTimerRef.current) {
+        clearTimeout(liveThreadStateRefreshTimerRef.current);
+      }
     };
   }, []);
 
@@ -567,11 +734,13 @@ function App() {
       await Promise.all([
         loadState(),
         loadTraceStatus(),
+        loadCollaborationModes(),
         loadThreads({ all: true })
       ]);
       if (selectedThreadId) {
         await loadSelectedThread(selectedThreadId);
         await loadThreadStreamEvents(selectedThreadId);
+        await loadThreadLiveState(selectedThreadId);
       }
       if (selectedReplayEntryId) {
         await loadReplayEntryDetail(selectedReplayEntryId);
@@ -581,8 +750,10 @@ function App() {
     }
   }, [
     clearError,
+    loadCollaborationModes,
     loadReplayEntryDetail,
     loadSelectedThread,
+    loadThreadLiveState,
     loadThreadStreamEvents,
     loadState,
     loadThreads,
@@ -614,7 +785,8 @@ function App() {
         setComposeText("");
         await Promise.all([
           loadSelectedThread(selectedThreadId),
-          loadThreadStreamEvents(selectedThreadId, { silent: true })
+          loadThreadStreamEvents(selectedThreadId, { silent: true }),
+          loadThreadLiveState(selectedThreadId, { silent: true })
         ]);
       } catch (error) {
         setError(error);
@@ -626,6 +798,7 @@ function App() {
       clearError,
       composeText,
       loadSelectedThread,
+      loadThreadLiveState,
       loadThreadStreamEvents,
       selectedThread,
       selectedThreadId,
@@ -633,6 +806,142 @@ function App() {
       setError
     ]
   );
+
+  const applyCollaborationMode = useCallback(async () => {
+    if (!selectedThreadId || applyingMode) {
+      return;
+    }
+    const modeValue = typeof selectedMode === "string" ? selectedMode.trim() : "";
+    if (!modeValue) {
+      return;
+    }
+
+    setApplyingMode(true);
+    try {
+      clearError();
+      await apiPost(`/api/thread/${encodeURIComponent(selectedThreadId)}/collaboration-mode`, {
+        mode: modeValue
+      });
+      await Promise.all([
+        loadSelectedThread(selectedThreadId),
+        loadThreadStreamEvents(selectedThreadId, { silent: true }),
+        loadThreadLiveState(selectedThreadId, { silent: true })
+      ]);
+    } catch (error) {
+      setError(error);
+    } finally {
+      setApplyingMode(false);
+    }
+  }, [
+    applyingMode,
+    clearError,
+    loadSelectedThread,
+    loadThreadLiveState,
+    loadThreadStreamEvents,
+    selectedMode,
+    selectedThreadId,
+    setError
+  ]);
+
+  const updateUserInputOption = useCallback((questionId, optionId) => {
+    setUserInputDraft((current) => ({
+      ...current,
+      [questionId]: {
+        ...(current[questionId] || {}),
+        selectedOptionId: optionId
+      }
+    }));
+  }, []);
+
+  const updateUserInputFreeform = useCallback((questionId, text) => {
+    setUserInputDraft((current) => ({
+      ...current,
+      [questionId]: {
+        ...(current[questionId] || {}),
+        freeformText: text
+      }
+    }));
+  }, []);
+
+  const submitUserInputResponse = useCallback(
+    async (responsePayload) => {
+      if (!selectedThreadId || !activeUserInputRequest || submittingUserInput) {
+        return;
+      }
+
+      setSubmittingUserInput(true);
+      try {
+        clearError();
+        await apiPost(`/api/thread/${encodeURIComponent(selectedThreadId)}/user-input`, {
+          requestId: activeUserInputRequest.requestId,
+          response: responsePayload
+        });
+        await Promise.all([
+          loadThreadLiveState(selectedThreadId, { silent: true }),
+          loadThreadStreamEvents(selectedThreadId, { silent: true }),
+          loadSelectedThread(selectedThreadId)
+        ]);
+      } catch (error) {
+        setError(error);
+      } finally {
+        setSubmittingUserInput(false);
+      }
+    },
+    [
+      activeUserInputRequest,
+      clearError,
+      loadSelectedThread,
+      loadThreadLiveState,
+      loadThreadStreamEvents,
+      selectedThreadId,
+      setError,
+      submittingUserInput
+    ]
+  );
+
+  const submitUserInput = useCallback(
+    async (event) => {
+      event.preventDefault();
+      if (!activeUserInputRequest) {
+        return;
+      }
+
+      const response = { answers: {} };
+      for (const question of Array.isArray(activeUserInputRequest.questions)
+        ? activeUserInputRequest.questions
+        : []) {
+        const draft = userInputDraft[question.id] || {};
+        const selectedOptionId =
+          typeof draft.selectedOptionId === "string" ? draft.selectedOptionId : "";
+        const freeformText = typeof draft.freeformText === "string" ? draft.freeformText.trim() : "";
+
+        let answerText = "";
+        if (Array.isArray(question.options) && question.options.length > 0) {
+          if (selectedOptionId) {
+            const option = question.options.find((item) => item.label === selectedOptionId);
+            answerText = typeof option?.label === "string" ? option.label.trim() : "";
+          }
+        } else {
+          answerText = freeformText;
+        }
+
+        if (!answerText && question.isOther) {
+          answerText = freeformText;
+        }
+
+        if (answerText) {
+          response.answers[question.id] = { answers: [answerText] };
+        }
+      }
+
+      await submitUserInputResponse(response);
+    },
+    [activeUserInputRequest, submitUserInputResponse, userInputDraft]
+  );
+
+  const skipUserInput = useCallback(async () => {
+    await submitUserInputResponse({ answers: {} });
+  }, [submitUserInputResponse]);
 
   const startTrace = useCallback(async () => {
     if (traceBusy) {
@@ -726,6 +1035,14 @@ function App() {
 
   const ipcStatusText = ipcHealthy ? "connected" : "disconnected";
   const liveStatusText = liveConnected ? "streaming" : "reconnecting";
+  const currentMode = liveThreadState?.latestCollaborationMode?.mode || "unknown";
+  const availableModeIds = Array.from(
+    new Set(
+      collaborationModes
+        .map((mode) => (typeof mode.mode === "string" ? mode.mode : ""))
+        .filter(Boolean)
+    )
+  );
 
   return (
     <div className="page">
@@ -896,6 +1213,136 @@ function App() {
                 </button>
               </div>
             </form>
+
+            <section className="planPanel">
+              <div className="sectionHead">
+                <h2>Plan Mode</h2>
+                <p className="sub">
+                  {liveThreadLoading
+                    ? "Loading..."
+                    : `${pendingUserInputRequests.length} pending question set${pendingUserInputRequests.length === 1 ? "" : "s"}`}
+                </p>
+              </div>
+
+              <div className="modeRow">
+                <label className="modeLabel">
+                  Mode
+                  <select
+                    value={selectedMode}
+                    onChange={(event) => setSelectedMode(event.target.value)}
+                    disabled={!selectedThreadId || applyingMode || collaborationModesLoading}
+                  >
+                    {(availableModeIds.length ? availableModeIds : ["default", "plan"]).map((mode) => (
+                      <option key={mode} value={mode}>
+                        {mode}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={!selectedThreadId || applyingMode || !selectedMode}
+                  onClick={applyCollaborationMode}
+                >
+                  {applyingMode ? "Applying..." : "Apply mode"}
+                </button>
+              </div>
+
+              <p className="sub">
+                Current mode from stream: <code>{currentMode}</code>
+              </p>
+
+              {!activeUserInputRequest ? (
+                <p className="sub">No pending user input request right now.</p>
+              ) : (
+                <form className="userInputForm" onSubmit={submitUserInput}>
+                  {pendingUserInputRequests.length > 1 ? (
+                    <label className="modeLabel">
+                      Request
+                      <select
+                        value={String(activeUserInputRequest.requestId)}
+                        onChange={(event) => setSelectedUserInputRequestId(event.target.value)}
+                        disabled={submittingUserInput}
+                      >
+                        {pendingUserInputRequests.map((request) => (
+                          <option key={String(request.requestId)} value={String(request.requestId)}>
+                            Request {String(request.requestId)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+
+                  {(Array.isArray(activeUserInputRequest.questions)
+                    ? activeUserInputRequest.questions
+                    : []
+                  ).map((question) => {
+                    const draft = userInputDraft[question.id] || {};
+                    const selectedOptionId =
+                      typeof draft.selectedOptionId === "string" ? draft.selectedOptionId : "";
+                    const freeformText =
+                      typeof draft.freeformText === "string" ? draft.freeformText : "";
+
+                    return (
+                      <article key={question.id || question.question} className="questionCard">
+                        <p className="questionHeader">{question.header || question.id || "Question"}</p>
+                        <p className="questionText">{question.question || ""}</p>
+
+                        {Array.isArray(question.options) && question.options.length > 0 ? (
+                          <div className="questionOptions">
+                            {question.options.map((option) => (
+                              <label
+                                key={`${question.id}-${option.label}`}
+                                className="questionOption"
+                              >
+                                <input
+                                  type="radio"
+                                  name={`question-${question.id}`}
+                                  value={option.label}
+                                  checked={selectedOptionId === option.label}
+                                  onChange={() => updateUserInputOption(question.id, option.label)}
+                                  disabled={submittingUserInput}
+                                />
+                                <span>{option.label}</span>
+                                {option.description ? (
+                                  <span className="sub">{option.description}</span>
+                                ) : null}
+                              </label>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {question.isOther || !question.options?.length ? (
+                          <input
+                            className="questionInput"
+                            type="text"
+                            value={freeformText}
+                            onChange={(event) =>
+                              updateUserInputFreeform(question.id, event.target.value)
+                            }
+                            placeholder="Type answer (optional)"
+                            disabled={submittingUserInput}
+                          />
+                        ) : null}
+                      </article>
+                    );
+                  })}
+
+                  <div className="buttonRow">
+                    <button type="submit" disabled={submittingUserInput}>
+                      {submittingUserInput ? "Submitting..." : "Submit answer"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={submittingUserInput}
+                      onClick={skipUserInput}
+                    >
+                      {submittingUserInput ? "Working..." : "Skip"}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </section>
 
             <section className="streamPanel">
               <div className="sectionHead">

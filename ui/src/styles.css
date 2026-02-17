@@ -148,7 +148,7 @@ h2 {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
   gap: 8px;
   overflow: hidden;
 }
@@ -335,6 +335,92 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.planPanel {
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: #fcfcfd;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.modeRow {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.modeLabel {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  min-width: min(280px, 100%);
+}
+
+.modeLabel select,
+.questionInput {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 7px;
+  background: #fff;
+}
+
+.modeLabel select:focus,
+.questionInput:focus {
+  outline: none;
+  border-color: #9ab7dc;
+}
+
+.userInputForm {
+  display: grid;
+  gap: 8px;
+}
+
+.questionCard {
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: #fff;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.questionHeader {
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.questionText {
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.questionOptions {
+  display: grid;
+  gap: 5px;
+}
+
+.questionOption {
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 6px 7px;
+  display: grid;
+  gap: 3px;
+  background: #fcfcfd;
+}
+
+.questionOption > input {
+  margin: 0;
 }
 
 .streamPanel {
@@ -559,5 +645,9 @@ button:disabled {
   .composeFooter {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .modeRow {
+    align-items: stretch;
   }
 }
