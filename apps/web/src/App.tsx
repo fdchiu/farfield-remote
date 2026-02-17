@@ -44,6 +44,18 @@ import { useTheme } from "@/hooks/useTheme";
 import { ConversationItem } from "@/components/ConversationItem";
 import { PlanPanel } from "@/components/PlanPanel";
 import { DiffBlock } from "@/components/DiffBlock";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from "@/components/ui/tooltip";
 
 /* ── Types ─────────────────────────────────────────────────── */
 type Health = Awaited<ReturnType<typeof getHealth>>;
@@ -108,20 +120,32 @@ function IconBtn({
   active?: boolean;
   children: React.ReactNode;
 }) {
-  return (
-    <button
+  const buttonNode = (
+    <Button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      title={title}
-      className={`p-2 rounded-lg transition-colors disabled:opacity-40 ${
+      variant="ghost"
+      size="icon"
+      className={`h-8 w-8 rounded-lg ${
         active
-          ? "bg-muted text-foreground"
+          ? "bg-muted text-foreground hover:bg-muted"
           : "text-muted-foreground hover:text-foreground hover:bg-muted"
       }`}
     >
       {children}
-    </button>
+    </Button>
+  );
+
+  if (!title) {
+    return buttonNode;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{buttonNode}</TooltipTrigger>
+      <TooltipContent>{title}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -146,17 +170,18 @@ function StreamEventCard({ event }: { event: unknown }) {
 
   return (
     <div className="rounded-lg border border-border overflow-hidden">
-      <button
+      <Button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-2.5 py-1.5 bg-muted/30 hover:bg-muted/60 transition-colors text-left"
+        variant="ghost"
+        className="h-auto w-full justify-start rounded-none bg-muted/30 px-2.5 py-1.5 text-left hover:bg-muted/60"
       >
         <ChevronRight
           size={10}
           className={`shrink-0 text-muted-foreground/60 transition-transform ${open ? "rotate-90" : ""}`}
         />
         <span className="font-mono text-[11px] text-muted-foreground truncate">{label}</span>
-      </button>
+      </Button>
       {open && (
         <div className="border-t border-border px-2.5 py-2">
           {isFileChange ? (
@@ -211,40 +236,48 @@ function PendingRequestCard({
             </div>
             <div className="text-sm font-medium text-foreground">{q.question}</div>
             <div className="space-y-1">
-              {q.options.map((opt) => (
-                <label
-                  key={opt.label}
-                  className={`flex items-start gap-2.5 cursor-pointer p-2 rounded-lg transition-colors ${
-                    draft.option === opt.label
-                      ? "bg-muted text-foreground"
-                      : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name={`q-${q.id}`}
-                    className="mt-0.5 shrink-0 accent-foreground"
-                    checked={draft.option === opt.label}
-                    onChange={() => onDraftChange(q.id, "option", opt.label)}
-                  />
-                  <span className="text-sm">
-                    <span className="font-medium">{opt.label}</span>
-                    {opt.description && (
-                      <span className="block text-xs text-muted-foreground/70 mt-0.5">
-                        {opt.description}
+              <RadioGroup
+                value={draft.option}
+                onValueChange={(value) => onDraftChange(q.id, "option", value)}
+                className="space-y-1"
+              >
+                {q.options.map((opt, optionIndex) => {
+                  const optionId = `q-${q.id}-opt-${optionIndex}`;
+                  return (
+                    <Label
+                      key={opt.label}
+                      htmlFor={optionId}
+                      className={`flex items-start gap-2.5 cursor-pointer p-2 rounded-lg transition-colors ${
+                        draft.option === opt.label
+                          ? "bg-muted text-foreground"
+                          : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <RadioGroupItem
+                        id={optionId}
+                        value={opt.label}
+                        className="mt-0.5 shrink-0"
+                      />
+                      <span className="text-sm">
+                        <span className="font-medium">{opt.label}</span>
+                        {opt.description && (
+                          <span className="block text-xs text-muted-foreground/70 mt-0.5">
+                            {opt.description}
+                          </span>
+                        )}
                       </span>
-                    )}
-                  </span>
-                </label>
-              ))}
+                    </Label>
+                  );
+                })}
+              </RadioGroup>
             </div>
             {q.isOther && (
-              <input
+              <Input
                 type={q.isSecret ? "password" : "text"}
                 value={draft.freeform}
                 onChange={(e) => onDraftChange(q.id, "freeform", e.target.value)}
                 placeholder="Free-form answer…"
-                className="w-full h-8 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                className="h-8 bg-background text-sm"
               />
             )}
           </div>
@@ -252,22 +285,25 @@ function PendingRequestCard({
       })}
 
       <div className="flex gap-2 pt-1">
-        <button
+        <Button
           type="button"
           onClick={onSkip}
           disabled={isBusy}
-          className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40"
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs"
         >
           Skip
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           onClick={onSubmit}
           disabled={isBusy}
-          className="h-8 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+          size="sm"
+          className="h-8 text-xs"
         >
           Submit
-        </button>
+        </Button>
       </div>
     </motion.div>
   );
@@ -622,7 +658,8 @@ export function App(): React.JSX.Element {
 
   /* ── Render ─────────────────────────────────────────────── */
   return (
-    <div className="h-screen flex overflow-hidden bg-background text-foreground font-sans">
+    <TooltipProvider delayDuration={120}>
+      <div className="h-screen flex overflow-hidden bg-background text-foreground font-sans">
 
       {/* Mobile sidebar backdrop */}
       <AnimatePresence>
@@ -650,13 +687,15 @@ export function App(): React.JSX.Element {
             <div className="w-5 h-5 rounded-md bg-foreground/90 shrink-0" />
             <span className="text-sm font-semibold">Codex Monitor</span>
           </div>
-          <button
+          <Button
             type="button"
             onClick={() => setSidebarOpen(false)}
-            className="md:hidden p-1 rounded text-muted-foreground hover:text-foreground"
+            variant="ghost"
+            size="icon"
+            className="md:hidden h-7 w-7 text-muted-foreground hover:text-foreground"
           >
             <X size={14} />
-          </button>
+          </Button>
         </div>
 
         {/* Thread list */}
@@ -667,14 +706,15 @@ export function App(): React.JSX.Element {
           {threads.map((thread) => {
             const isSelected = thread.id === selectedThreadId;
             return (
-              <button
+              <Button
                 key={thread.id}
                 type="button"
                 onClick={() => {
                   setSelectedThreadId(thread.id);
                   setSidebarOpen(false);
                 }}
-                className={`w-full flex flex-col px-3 py-2.5 text-left transition-colors ${
+                variant="ghost"
+                className={`w-full h-auto flex flex-col items-start justify-start gap-0 rounded-none px-3 py-2.5 text-left transition-colors ${
                   isSelected
                     ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
@@ -686,7 +726,7 @@ export function App(): React.JSX.Element {
                     {formatDate(thread.updatedAt)}
                   </span>
                 )}
-              </button>
+              </Button>
             );
           })}
         </div>
@@ -765,13 +805,15 @@ export function App(): React.JSX.Element {
             >
               <div className="flex items-center justify-between px-4 py-2 bg-destructive/10 border-b border-destructive/20 text-sm text-destructive">
                 <span className="truncate">{error}</span>
-                <button
+                <Button
                   type="button"
                   onClick={() => setError("")}
-                  className="ml-3 shrink-0 opacity-60 hover:opacity-100"
+                  variant="ghost"
+                  size="icon"
+                  className="ml-3 h-6 w-6 shrink-0 opacity-60 hover:opacity-100"
                 >
                   <X size={13} />
-                </button>
+                </Button>
               </div>
             </motion.div>
           )}
@@ -854,7 +896,7 @@ export function App(): React.JSX.Element {
                 {/* Composer */}
                 <div className="flex flex-col gap-2">
                   <div className="flex items-end gap-2 rounded-2xl border border-border bg-card px-4 py-3 focus-within:border-muted-foreground/40 transition-colors">
-                    <textarea
+                    <Textarea
                       ref={textareaRef}
                       value={messageDraft}
                       onChange={(e) => setMessageDraft(e.target.value)}
@@ -866,36 +908,39 @@ export function App(): React.JSX.Element {
                       }}
                       placeholder="Message Codex…"
                       rows={1}
-                      className="flex-1 resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none min-h-[22px] max-h-[200px] leading-6"
+                      className="flex-1 min-h-[22px] max-h-[200px] resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 shadow-none focus-visible:ring-0"
                     />
-                    <button
+                    <Button
                       type="button"
                       onClick={() => void submitMessage()}
                       disabled={!selectedThreadId || isBusy || !messageDraft.trim()}
-                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg bg-foreground text-background disabled:opacity-30 hover:opacity-80 transition-opacity"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 bg-foreground text-background hover:bg-foreground/80 disabled:opacity-30"
                     >
                       {isBusy ? (
                         <Loader2 size={13} className="animate-spin" />
                       ) : (
                         <ArrowUp size={13} />
                       )}
-                    </button>
+                    </Button>
                   </div>
 
                   {/* Toolbar */}
                   <div className="flex items-center gap-2 px-1">
-                    <button
+                    <Button
                       type="button"
                       onClick={() => setPlanOpen((v) => !v)}
-                      className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full transition-colors ${
+                      variant="ghost"
+                      size="sm"
+                      className={`rounded-full text-xs ${
                         planOpen
-                          ? "bg-muted text-foreground"
+                          ? "bg-muted text-foreground hover:bg-muted"
                           : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                       }`}
                     >
                       <Settings2 size={11} />
                       Plan mode
-                    </button>
+                    </Button>
                     {pendingRequests.length > 0 && (
                       <span className="text-xs text-amber-500 dark:text-amber-400">
                         {pendingRequests.length} pending
@@ -931,11 +976,12 @@ export function App(): React.JSX.Element {
                       .slice()
                       .reverse()
                       .map((entry) => (
-                        <button
+                        <Button
                           key={entry.id}
                           type="button"
                           onClick={() => setSelectedHistoryId(entry.id)}
-                          className={`w-full text-left px-3 py-2 transition-colors ${
+                          variant="ghost"
+                          className={`w-full h-auto flex-col items-start justify-start gap-0 rounded-none px-3 py-2 text-left transition-colors ${
                             selectedHistoryId === entry.id
                               ? "bg-muted text-foreground"
                               : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
@@ -957,7 +1003,7 @@ export function App(): React.JSX.Element {
                           <div className="text-[10px] text-muted-foreground/50 font-mono truncate">
                             {entry.at}
                           </div>
-                        </button>
+                        </Button>
                       ))}
                   </div>
 
@@ -968,16 +1014,20 @@ export function App(): React.JSX.Element {
                     ) : (
                       <>
                         <div className="flex items-center gap-2">
-                          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-                            <input
-                              type="checkbox"
-                              className="accent-foreground"
+                          <Label
+                            htmlFor="wait-for-replay-response"
+                            className="flex items-center gap-1.5 text-xs font-normal text-muted-foreground cursor-pointer"
+                          >
+                            <Checkbox
+                              id="wait-for-replay-response"
                               checked={waitForReplayResponse}
-                              onChange={(e) => setWaitForReplayResponse(e.target.checked)}
+                              onCheckedChange={(checked) =>
+                                setWaitForReplayResponse(checked === true)
+                              }
                             />
                             wait for response
-                          </label>
-                          <button
+                          </Label>
+                          <Button
                             type="button"
                             onClick={() =>
                               void replayHistoryEntry({
@@ -985,10 +1035,12 @@ export function App(): React.JSX.Element {
                                 waitForResponse: waitForReplayResponse
                               }).then(refreshAll)
                             }
-                            className="h-7 px-3 text-xs rounded-lg border border-border hover:bg-muted transition-colors"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
                           >
                             Replay
-                          </button>
+                          </Button>
                         </div>
                         <pre className="font-mono text-[11px] text-muted-foreground leading-5 whitespace-pre-wrap break-words">
                           {JSON.stringify(historyDetail.fullPayload, null, 2)}
@@ -1016,21 +1068,21 @@ export function App(): React.JSX.Element {
                       {traceStatus?.active ? "recording" : "idle"}
                     </span>
                   </div>
-                  <input
+                  <Input
                     value={traceLabel}
                     onChange={(e) => setTraceLabel(e.target.value)}
                     placeholder="label"
-                    className="h-7 w-full px-2.5 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                    className="h-7 text-xs"
                   />
-                  <input
+                  <Input
                     value={traceNote}
                     onChange={(e) => setTraceNote(e.target.value)}
                     placeholder="marker note"
-                    className="h-7 w-full px-2.5 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                    className="h-7 text-xs"
                   />
                   <div className="flex gap-1.5">
                     {(["Start", "Mark", "Stop"] as const).map((btn) => (
-                      <button
+                      <Button
                         key={btn}
                         type="button"
                         onClick={() => {
@@ -1042,10 +1094,12 @@ export function App(): React.JSX.Element {
                               : stopTrace();
                           void action.then(refreshAll);
                         }}
-                        className="h-7 px-3 text-xs rounded-lg border border-border hover:bg-muted transition-colors"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
                       >
                         {btn}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                 </div>
@@ -1070,6 +1124,7 @@ export function App(): React.JSX.Element {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }

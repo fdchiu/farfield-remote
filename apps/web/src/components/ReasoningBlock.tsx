@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronRight, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface ReasoningBlockProps {
   summary: string[];
@@ -14,10 +15,11 @@ export function ReasoningBlock({ summary, text, isActive }: ReasoningBlockProps)
 
   return (
     <div className="my-0.5">
-      <button
+      <Button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors group w-full text-left"
+        variant="ghost"
+        className="h-auto w-full justify-start gap-2 p-0 text-left text-sm text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground"
       >
         {isActive ? (
           <Loader2 size={12} className="animate-spin shrink-0 opacity-60" />
@@ -46,7 +48,7 @@ export function ReasoningBlock({ summary, text, isActive }: ReasoningBlockProps)
             {summary.length} steps
           </span>
         )}
-      </button>
+      </Button>
 
       <AnimatePresence initial={false}>
         {expanded && (

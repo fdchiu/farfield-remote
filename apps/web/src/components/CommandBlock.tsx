@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { z } from "zod";
 import type { CommandExecutionItemSchema } from "@codex-monitor/codex-protocol";
+import { Button } from "@/components/ui/button";
 
 type CommandItem = z.infer<typeof CommandExecutionItemSchema>;
 
@@ -41,10 +42,11 @@ export function CommandBlock({ item, isActive }: { item: CommandItem; isActive: 
   return (
     <div className="rounded-xl border border-border overflow-hidden text-sm">
       {/* Header row */}
-      <button
+      <Button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2.5 px-3 py-2 bg-muted/40 hover:bg-muted/70 transition-colors text-left"
+        variant="ghost"
+        className="h-auto w-full justify-start rounded-none bg-muted/40 px-3 py-2 text-left transition-colors hover:bg-muted/70"
       >
         <Terminal size={12} className="shrink-0 text-muted-foreground" />
         <code className="flex-1 font-mono text-xs text-foreground/80 truncate min-w-0">
@@ -70,7 +72,7 @@ export function CommandBlock({ item, isActive }: { item: CommandItem; isActive: 
             className={`text-muted-foreground/60 transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
           />
         </div>
-      </button>
+      </Button>
 
       {/* Expanded body */}
       {expanded && (

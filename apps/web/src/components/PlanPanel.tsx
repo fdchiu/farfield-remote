@@ -1,4 +1,13 @@
 import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 
 interface Mode {
   mode: string;
@@ -28,8 +37,7 @@ interface PlanPanelProps {
   hasMode: boolean;
 }
 
-const selectCls =
-  "h-8 w-full rounded-lg border border-border bg-background px-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring transition-colors";
+const APP_DEFAULT_VALUE = "__app_default__";
 
 export function PlanPanel({
   modes,
@@ -52,76 +60,86 @@ export function PlanPanel({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
       transition={{ duration: 0.15 }}
-      className="rounded-xl border border-border bg-card p-3 space-y-3"
+      className="rounded-xl border border-border bg-card p-4 space-y-4"
     >
-      <div className="text-xs font-semibold text-foreground">Settings</div>
+      <div className="text-sm font-medium">Settings</div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {/* Mode */}
-        <div className="space-y-1">
-          <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
-            Mode
-          </label>
-          <select
-            className={selectCls}
+        <div className="space-y-2">
+          <Label htmlFor="plan-mode">Mode</Label>
+          <Select
             value={selectedModeKey}
-            onChange={(e) => onModeChange(e.target.value)}
+            onValueChange={onModeChange}
           >
-            {modes.map((m) => (
-              <option key={m.mode} value={m.mode}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="plan-mode" className="w-full">
+              <SelectValue placeholder="Select mode" />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              {modes.map((m) => (
+                <SelectItem key={m.mode} value={m.mode}>
+                  {m.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Model */}
-        <div className="space-y-1">
-          <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
-            Model
-          </label>
-          <select
-            className={selectCls}
-            value={selectedModelId}
-            onChange={(e) => onModelChange(e.target.value)}
+        <div className="space-y-2">
+          <Label htmlFor="plan-model">Model</Label>
+          <Select
+            value={selectedModelId || APP_DEFAULT_VALUE}
+            onValueChange={(value) =>
+              onModelChange(value === APP_DEFAULT_VALUE ? "" : value)
+            }
           >
-            <option value="">App default</option>
-            {modelOptions.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="plan-model" className="w-full">
+              <SelectValue placeholder="App default" />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              <SelectItem value={APP_DEFAULT_VALUE}>App default</SelectItem>
+              {modelOptions.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Effort */}
-        <div className="space-y-1">
-          <label className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
-            Effort
-          </label>
-          <select
-            className={selectCls}
-            value={selectedReasoningEffort}
-            onChange={(e) => onEffortChange(e.target.value)}
+        <div className="space-y-2">
+          <Label htmlFor="plan-effort">Effort</Label>
+          <Select
+            value={selectedReasoningEffort || APP_DEFAULT_VALUE}
+            onValueChange={(value) =>
+              onEffortChange(value === APP_DEFAULT_VALUE ? "" : value)
+            }
           >
-            <option value="">App default</option>
-            {effortOptions.map((e) => (
-              <option key={e} value={e}>
-                {e}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id="plan-effort" className="w-full">
+              <SelectValue placeholder="App default" />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              <SelectItem value={APP_DEFAULT_VALUE}>App default</SelectItem>
+              {effortOptions.map((e) => (
+                <SelectItem key={e} value={e}>
+                  {e}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      <button
+      <Button
         type="button"
         onClick={onApply}
         disabled={!hasThread || isBusy || !hasMode}
-        className="h-8 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
+        className="w-fit"
       >
         Apply
-      </button>
+      </Button>
     </motion.div>
   );
 }

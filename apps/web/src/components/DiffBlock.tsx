@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronRight, FilePlus, FileMinus, FileEdit } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface FileChange {
   path: string;
@@ -73,10 +74,11 @@ export function DiffBlock({ changes }: DiffBlockProps) {
 
         return (
           <div key={i} className={i > 0 ? "border-t border-border" : ""}>
-            <button
+            <Button
               type="button"
               onClick={() => setExpandedIdx(isExpanded ? null : i)}
-              className="w-full flex items-center gap-2 px-3 py-2.5 bg-muted/40 hover:bg-muted/70 transition-colors text-left"
+              variant="ghost"
+              className="h-auto w-full justify-start rounded-none bg-muted/40 px-3 py-2.5 text-left transition-colors hover:bg-muted/70"
             >
               <Icon size={12} className={`shrink-0 ${cls}`} />
               <span className="font-mono text-xs font-medium text-foreground truncate">{fileName}</span>
@@ -98,7 +100,7 @@ export function DiffBlock({ changes }: DiffBlockProps) {
                   className={`text-muted-foreground/50 transition-transform duration-150 ${isExpanded ? "rotate-90" : ""}`}
                 />
               </div>
-            </button>
+            </Button>
 
             {isExpanded && (
               <div className="border-t border-border overflow-x-auto">
