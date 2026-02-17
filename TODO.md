@@ -45,18 +45,18 @@ Only mark items done when they are fully complete and verified.
 
 ## Stage 4: Server App (`apps/server`)
 
-- [ ] Rebuild server in TypeScript with strict route schemas.
-- [ ] Use protocol and API packages only (thin orchestration).
-- [ ] Expose clean routes for:
-  - [ ] Health and app status
-  - [ ] Thread list and thread detail
-  - [ ] Live thread state
-  - [ ] Message send, mode set, user input submit, interrupt
-  - [ ] Debug trace, raw history, and replay
-- [ ] Keep SSE event stream support.
-- [ ] Keep trace recording and replay features.
-- [ ] Ensure all inbound and outbound payloads are validated.
-- [ ] Add tests for route validation and critical behavior.
+- [x] Rebuild server in TypeScript with strict route schemas.
+- [x] Use protocol and API packages only (thin orchestration).
+- [x] Expose clean routes for:
+  - [x] Health and app status
+  - [x] Thread list and thread detail
+  - [x] Live thread state
+  - [x] Message send, mode set, user input submit, interrupt
+  - [x] Debug trace, raw history, and replay
+- [x] Keep SSE event stream support.
+- [x] Keep trace recording and replay features.
+- [x] Ensure all inbound and outbound payloads are validated.
+- [x] Add tests for route validation and critical behavior.
 
 ## Stage 5: Web App (`apps/web`)
 
