@@ -866,7 +866,7 @@ export function App(): React.JSX.Element {
         </div>
 
         {/* Thread list */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-2">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 pl-2 pr-0">
           {threads.length === 0 && (
             <div className="px-4 py-6 text-xs text-muted-foreground text-center">No threads</div>
           )}
@@ -1198,7 +1198,7 @@ export function App(): React.JSX.Element {
                       onValueChange={(value) => setSelectedModelId(value === APP_DEFAULT_VALUE ? "" : value)}
                       disabled={!selectedThreadId}
                     >
-                      <SelectTrigger className="h-8 w-[180px] rounded-full border-0 bg-transparent px-3 text-xs text-muted-foreground shadow-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-0 data-[state=open]:bg-muted/70">
+                      <SelectTrigger className="h-8 w-[180px] rounded-full border-0 bg-transparent dark:bg-transparent px-3 text-xs text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-0">
                         <SelectValue placeholder="Model" />
                       </SelectTrigger>
                       <SelectContent position="popper">
@@ -1217,7 +1217,7 @@ export function App(): React.JSX.Element {
                       }
                       disabled={!selectedThreadId}
                     >
-                      <SelectTrigger className="h-8 w-[165px] rounded-full border-0 bg-transparent px-3 text-xs text-muted-foreground shadow-none hover:bg-muted/60 hover:text-foreground focus-visible:ring-0 data-[state=open]:bg-muted/70">
+                      <SelectTrigger className="h-8 w-[165px] rounded-full border-0 bg-transparent dark:bg-transparent px-3 text-xs text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-0">
                         <SelectValue placeholder="Effort" />
                       </SelectTrigger>
                       <SelectContent position="popper">
