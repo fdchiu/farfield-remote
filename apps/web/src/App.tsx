@@ -7,6 +7,7 @@ import {
 } from "react";
 import {
   Activity,
+  ArrowDown,
   ArrowUp,
   Bug,
   ChevronRight,
@@ -343,6 +344,7 @@ export function App(): React.JSX.Element {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [planOpen, setPlanOpen] = useState(false);
+  const [isChatAtBottom, setIsChatAtBottom] = useState(true);
 
   /* Refs */
   const selectedThreadIdRef = useRef<string | null>(null);
@@ -398,6 +400,10 @@ export function App(): React.JSX.Element {
   }, [liveState?.conversationState?.latestModel, models, selectedModelId]);
 
   const turns = liveState?.conversationState?.turns ?? [];
+  const conversationItemCount = useMemo(
+    () => turns.reduce((count, turn) => count + (turn.items?.length ?? 0), 0),
+    [turns]
+  );
   const lastTurn = turns[turns.length - 1];
   const isGenerating = lastTurn?.status === "in-progress";
 
@@ -519,12 +525,38 @@ export function App(): React.JSX.Element {
     setSelectedReasoningEffort(lm?.settings.reasoning_effort ?? cs.latestReasoningEffort ?? "");
   }, [liveState]);
 
-  // Auto-scroll to bottom
+  // Track whether chat view is at the bottom.
   useEffect(() => {
-    if (scrollRef.current && activeTab === "chat") {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (activeTab !== "chat" || !scrollRef.current) {
+      return;
     }
-  }, [turns.length, activeTab]);
+
+    const scroller = scrollRef.current;
+    const updateBottomState = () => {
+      const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      setIsChatAtBottom(distanceFromBottom <= 48);
+    };
+
+    updateBottomState();
+    scroller.addEventListener("scroll", updateBottomState, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", updateBottomState);
+    };
+  }, [activeTab, selectedThreadId]);
+
+  // Keep chat pinned to bottom only if user is already at the bottom.
+  useEffect(() => {
+    if (activeTab === "chat" && isChatAtBottom && scrollRef.current) {
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    }
+  }, [activeTab, conversationItemCount, isChatAtBottom]);
+
+  // New thread selection starts at the bottom.
+  useEffect(() => {
+    if (activeTab !== "chat" || !scrollRef.current) return;
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    setIsChatAtBottom(true);
+  }, [activeTab, selectedThreadId]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -860,7 +892,7 @@ export function App(): React.JSX.Element {
 
         {/* ── Chat tab ──────────────────────────────────────── */}
         {activeTab === "chat" && (
-          <div className="flex-1 flex flex-col min-h-0">
+          <div className="relative flex-1 flex flex-col min-h-0">
 
             {/* Conversation */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto">
@@ -870,30 +902,65 @@ export function App(): React.JSX.Element {
                     {selectedThreadId ? "No messages yet" : "Select a thread from the sidebar"}
                   </div>
                 ) : (
-                  <div className="space-y-8">
+                  <motion.div layout className="space-y-8">
                     {turns.map((turn, ti) => {
                       const isLastTurn = ti === turns.length - 1;
                       const turnInProgress = isLastTurn && isGenerating;
                       const items = turn.items ?? [];
                       return (
-                        <div key={turn.turnId ?? ti} className="space-y-5">
+                        <motion.div layout key={turn.turnId ?? ti} className="space-y-5">
+                          <AnimatePresence initial={false}>
                           {items.map((item, ii) => (
-                            <ConversationItem
+                            <motion.div
+                              layout
                               key={item.id ?? `${ti}-${ii}`}
-                              item={item}
-                              isLast={ii === items.length - 1}
-                              turnIsInProgress={turnInProgress}
-                              previousItemType={items[ii - 1]?.type}
-                              nextItemType={items[ii + 1]?.type}
-                            />
+                              initial={{ opacity: 0, y: 12 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -8 }}
+                              transition={{ duration: 0.2, ease: "easeOut" }}
+                            >
+                              <ConversationItem
+                                item={item}
+                                isLast={ii === items.length - 1}
+                                turnIsInProgress={turnInProgress}
+                                previousItemType={items[ii - 1]?.type}
+                                nextItemType={items[ii + 1]?.type}
+                              />
+                            </motion.div>
                           ))}
-                        </div>
+                          </AnimatePresence>
+                        </motion.div>
                       );
                     })}
-                  </div>
+                  </motion.div>
                 )}
               </div>
             </div>
+
+            <AnimatePresence initial={false}>
+              {!isChatAtBottom && turns.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.18 }}
+                  className="absolute left-1/2 -translate-x-1/2 bottom-[7.25rem] md:bottom-[7.75rem] z-20"
+                >
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      if (!scrollRef.current) return;
+                      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+                      setIsChatAtBottom(true);
+                    }}
+                    size="icon"
+                    className="h-10 w-10 rounded-full border border-border bg-card text-foreground shadow-lg hover:bg-muted"
+                  >
+                    <ArrowDown size={16} />
+                  </Button>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Input area */}
             <div className="border-t border-border px-4 py-4 shrink-0">
