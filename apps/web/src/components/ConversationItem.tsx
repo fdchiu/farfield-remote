@@ -63,7 +63,7 @@ export function ConversationItem({ item, isLast, turnIsInProgress }: Props) {
   /* ── Plan ───────────────────────────────────────────── */
   if (item.type === "plan") {
     return (
-      <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3">
+      <div className="my-2 rounded-xl border border-border/60 bg-muted/30 px-4 py-3">
         <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">
           Plan
         </div>
@@ -94,13 +94,19 @@ export function ConversationItem({ item, isLast, turnIsInProgress }: Props) {
 
   /* ── Command execution ──────────────────────────────── */
   if (item.type === "commandExecution") {
-    return <CommandBlock item={item} isActive={isActive} />;
+    return (
+      <div className="my-2">
+        <CommandBlock item={item} isActive={isActive} />
+      </div>
+    );
   }
 
   /* ── File change ────────────────────────────────────── */
   if (item.type === "fileChange") {
     return (
-      <DiffBlock changes={item.changes} />
+      <div className="my-2">
+        <DiffBlock changes={item.changes} />
+      </div>
     );
   }
 
@@ -116,7 +122,7 @@ export function ConversationItem({ item, isLast, turnIsInProgress }: Props) {
   /* ── Web search ─────────────────────────────────────── */
   if (item.type === "webSearch") {
     return (
-      <div className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+      <div className="my-2 rounded-lg border border-border bg-muted/20 px-3 py-2">
         <div className="text-[10px] text-muted-foreground font-mono mb-1 uppercase tracking-wider">
           Web search
         </div>

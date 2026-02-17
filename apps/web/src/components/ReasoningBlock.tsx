@@ -16,7 +16,7 @@ export function ReasoningBlock({ summary, text, isActive }: ReasoningBlockProps)
   const canExpand = sanitizedSummary.length > 1;
 
   return (
-    <div className="my-0.5">
+    <div className="my-2">
       <Button
         type="button"
         onClick={() => {
