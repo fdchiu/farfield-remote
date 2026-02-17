@@ -90,21 +90,47 @@ function getItemRole(item: ConversationState["turns"][number]["items"][number]):
   return item.type;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readTextContent(value: unknown): string {
+  if (!Array.isArray(value)) {
+    return "";
+  }
+
+  return value
+    .map((part) => {
+      if (!isRecord(part) || typeof part["text"] !== "string") {
+        return "";
+      }
+      return part["text"];
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
 function getItemText(item: ConversationState["turns"][number]["items"][number]): string {
   if (item.type === "userMessage") {
-    return item.content.map((part) => part.text).join("\n");
+    return readTextContent(isRecord(item) ? item.content : undefined);
   }
   if (item.type === "agentMessage") {
-    return item.text;
+    return isRecord(item) && typeof item.text === "string" ? item.text : "";
   }
   if (item.type === "reasoning") {
-    return item.summary?.join("\n") ?? item.text ?? "";
+    if (isRecord(item) && Array.isArray(item.summary)) {
+      const lines = item.summary.filter((line): line is string => typeof line === "string");
+      if (lines.length > 0) {
+        return lines.join("\n");
+      }
+    }
+    return isRecord(item) && typeof item.text === "string" ? item.text : "";
   }
   if (item.type === "plan") {
-    return item.text;
+    return isRecord(item) && typeof item.text === "string" ? item.text : "";
   }
   if (item.type === "userInputResponse") {
-    return JSON.stringify(item.answers, null, 2);
+    return JSON.stringify(isRecord(item) ? item.answers ?? {} : {}, null, 2);
   }
   return JSON.stringify(item, null, 2);
 }
