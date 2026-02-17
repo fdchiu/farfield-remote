@@ -94,6 +94,8 @@ function toErrorMessage(err: unknown): string {
 }
 
 const DEFAULT_EFFORT_OPTIONS = ["minimal", "low", "medium", "high", "xhigh"] as const;
+const INITIAL_VISIBLE_CHAT_ITEMS = 180;
+const VISIBLE_CHAT_ITEMS_STEP = 120;
 
 /* ── Small UI atoms ─────────────────────────────────────────── */
 function StatusDot({ ok, label }: { ok: boolean | undefined; label: string }) {
@@ -345,6 +347,7 @@ export function App(): React.JSX.Element {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [planOpen, setPlanOpen] = useState(false);
   const [isChatAtBottom, setIsChatAtBottom] = useState(true);
+  const [visibleChatItemLimit, setVisibleChatItemLimit] = useState(INITIAL_VISIBLE_CHAT_ITEMS);
 
   /* Refs */
   const selectedThreadIdRef = useRef<string | null>(null);
@@ -405,6 +408,25 @@ export function App(): React.JSX.Element {
     () => turns.reduce((count, turn) => count + (turn.items?.length ?? 0), 0),
     [turns]
   );
+  const firstVisibleChatItemIndex = Math.max(0, conversationItemCount - visibleChatItemLimit);
+  const hasHiddenChatItems = firstVisibleChatItemIndex > 0;
+  const visibleTurns = useMemo(() => {
+    let globalItemIndex = 0;
+    return turns
+      .map((turn, ti) => {
+        const items = turn.items ?? [];
+        const visibleItems: Array<{ item: (typeof items)[number]; itemIndexInTurn: number; globalItemIndex: number }> = [];
+        items.forEach((item, itemIndexInTurn) => {
+          const itemGlobalIndex = globalItemIndex;
+          globalItemIndex += 1;
+          if (itemGlobalIndex >= firstVisibleChatItemIndex) {
+            visibleItems.push({ item, itemIndexInTurn, globalItemIndex: itemGlobalIndex });
+          }
+        });
+        return { turn, turnIndex: ti, visibleItems };
+      })
+      .filter((entry) => entry.visibleItems.length > 0);
+  }, [firstVisibleChatItemIndex, turns]);
   const lastTurn = turns[turns.length - 1];
   const isGenerating = lastTurn?.status === "in-progress";
 
@@ -572,6 +594,7 @@ export function App(): React.JSX.Element {
     if (activeTab !== "chat" || !scrollRef.current) return;
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     setIsChatAtBottom(true);
+    setVisibleChatItemLimit(INITIAL_VISIBLE_CHAT_ITEMS);
   }, [activeTab, selectedThreadId]);
 
   // Auto-resize textarea
@@ -919,17 +942,34 @@ export function App(): React.JSX.Element {
                   </div>
                 ) : (
                   <motion.div layout className="space-y-8">
-                    {turns.map((turn, ti) => {
-                      const isLastTurn = ti === turns.length - 1;
+                    {hasHiddenChatItems && (
+                      <div className="flex justify-center">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-full"
+                          onClick={() => {
+                            setVisibleChatItemLimit((limit) =>
+                              Math.min(conversationItemCount, limit + VISIBLE_CHAT_ITEMS_STEP)
+                            );
+                          }}
+                        >
+                          Show older messages ({firstVisibleChatItemIndex})
+                        </Button>
+                      </div>
+                    )}
+                    {visibleTurns.map(({ turn, turnIndex, visibleItems }) => {
+                      const isLastTurn = turnIndex === turns.length - 1;
                       const turnInProgress = isLastTurn && isGenerating;
                       const items = turn.items ?? [];
                       return (
-                        <motion.div layout key={turn.turnId ?? ti} className="space-y-5">
+                        <motion.div layout key={turn.turnId ?? turnIndex} className="space-y-5">
                           <AnimatePresence initial={false}>
-                          {items.map((item, ii) => (
+                          {visibleItems.map(({ item, itemIndexInTurn, globalItemIndex }) => (
                             <motion.div
                               layout
-                              key={item.id ?? `${ti}-${ii}`}
+                              key={item.id ?? `${turnIndex}-${itemIndexInTurn}`}
                               initial={{ opacity: 0, y: 12 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: -8 }}
@@ -937,10 +977,10 @@ export function App(): React.JSX.Element {
                             >
                               <ConversationItem
                                 item={item}
-                                isLast={ii === items.length - 1}
+                                isLast={globalItemIndex === conversationItemCount - 1}
                                 turnIsInProgress={turnInProgress}
-                                previousItemType={items[ii - 1]?.type}
-                                nextItemType={items[ii + 1]?.type}
+                                previousItemType={items[itemIndexInTurn - 1]?.type}
+                                nextItemType={items[itemIndexInTurn + 1]?.type}
                               />
                             </motion.div>
                           ))}
