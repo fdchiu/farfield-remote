@@ -22,20 +22,19 @@ function createThread(): ThreadConversationState {
 
 describe("CodexMonitorService", () => {
   it("sends message using strict thread template", async () => {
-    const appClient = {
-      readThread: vi.fn().mockResolvedValue({ thread: createThread() })
-    };
-
     const ipcClient = {
       sendRequestAndWait: vi.fn().mockResolvedValue({ type: "response", requestId: 1 })
     };
 
-    const service = new CodexMonitorService(appClient as never, ipcClient as never);
+    const service = new CodexMonitorService(ipcClient as never);
 
     await service.sendMessage({
       threadId: "thread-1",
       ownerClientId: "client-1",
-      text: "new message"
+      text: "new message",
+      turnStartTemplate: createThread().turns[0]?.params as NonNullable<
+        ThreadConversationState["turns"][number]["params"]
+      >
     });
 
     expect(ipcClient.sendRequestAndWait).toHaveBeenCalledWith(
@@ -51,10 +50,7 @@ describe("CodexMonitorService", () => {
   });
 
   it("submits user input with validated payload", async () => {
-    const service = new CodexMonitorService(
-      { readThread: vi.fn() } as never,
-      { sendRequestAndWait: vi.fn().mockResolvedValue({}) } as never
-    );
+    const service = new CodexMonitorService({ sendRequestAndWait: vi.fn().mockResolvedValue({}) } as never);
 
     await service.submitUserInput({
       threadId: "thread-1",

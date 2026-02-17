@@ -7,12 +7,14 @@ import {
   AppServerClient,
   CodexMonitorService,
   DesktopIpcClient,
+  findLatestTurnParamsTemplate,
   reduceThreadStreamEvents,
   type SendRequestOptions
 } from "@codex-monitor/codex-api";
 import {
   type CollaborationMode,
   type IpcFrame,
+  parseThreadConversationState,
   parseThreadStreamStateChangedBroadcast,
   parseUserInputResponsePayload
 } from "@codex-monitor/codex-protocol";
@@ -218,6 +220,32 @@ function pushSystem(message: string, details: Record<string, unknown> = {}): voi
   pushHistory("system", "system", { message, details });
 }
 
+type ActionStage = "attempt" | "success" | "error";
+
+function pushActionEvent(
+  action: string,
+  stage: ActionStage,
+  details: Record<string, unknown>
+): void {
+  pushHistory("app", "out", {
+    type: "action",
+    action,
+    stage,
+    ...details
+  });
+}
+
+function pushActionError(
+  action: string,
+  error: unknown,
+  details: Record<string, unknown>
+): string {
+  const message = toErrorMessage(error);
+  pushActionEvent(action, "error", { ...details, error: message });
+  pushSystem("Action failed", { action, ...details, error: message });
+  return message;
+}
+
 function broadcastRuntimeState(): void {
   broadcastSse({
     type: "state",
@@ -276,14 +304,20 @@ function scheduleIpcReconnect(): void {
 const appClient = new AppServerClient({
   executablePath: runtimeState.appExecutable,
   userAgent: USER_AGENT,
-  cwd: DEFAULT_WORKSPACE
+  cwd: DEFAULT_WORKSPACE,
+  onStderr: (line) => {
+    pushHistory("app", "system", {
+      type: "stderr",
+      line
+    });
+  }
 });
 
 const ipcClient = new DesktopIpcClient({
   socketPath: runtimeState.socketPath
 });
 
-const service = new CodexMonitorService(appClient, ipcClient);
+const service = new CodexMonitorService(ipcClient);
 
 function parseInteger(value: string | null, fallback: number): number {
   if (!value) {
@@ -633,23 +667,61 @@ const server = http.createServer(async (req, res) => {
         }
 
         const body = parseBody(SendMessageBodySchema, await readJsonBody(req));
-        const ownerClientId = resolveOwnerClientId(threadOwnerById, threadId, body.ownerClientId);
+        let ownerClientId: string;
+        try {
+          ownerClientId = resolveOwnerClientId(threadOwnerById, threadId, body.ownerClientId);
+        } catch (error) {
+          const message = pushActionError("messages", error, { threadId });
+          jsonResponse(res, 409, { ok: false, error: message, threadId });
+          return;
+        }
 
-        const messageInput = {
+        pushActionEvent("messages", "attempt", {
           threadId,
           ownerClientId,
-          text: body.text
-        } as const;
-
-        await service.sendMessage({
-          ...messageInput,
-          ...(body.cwd ? { cwd: body.cwd } : {}),
-          ...(typeof body.isSteering === "boolean" ? { isSteering: body.isSteering } : {})
+          textLength: body.text.length,
+          isSteering: typeof body.isSteering === "boolean" ? body.isSteering : false
         });
 
-        pushHistory("app", "out", {
-          type: "action",
-          action: "messages",
+        let turnStartTemplate: ReturnType<typeof findLatestTurnParamsTemplate>;
+        try {
+          const live = getThreadLiveState(threadId);
+          if (!live.conversationState) {
+            throw new Error(
+              "No live conversation state found for this thread. Open the thread in desktop and wait for stream activity."
+            );
+          }
+
+          const conversationState = parseThreadConversationState(live.conversationState);
+          turnStartTemplate = findLatestTurnParamsTemplate(conversationState);
+        } catch (error) {
+          const message = pushActionError("messages", error, {
+            threadId,
+            ownerClientId
+          });
+          jsonResponse(res, 409, { ok: false, error: message, threadId, ownerClientId });
+          return;
+        }
+
+        try {
+          await service.sendMessage({
+            threadId,
+            ownerClientId,
+            text: body.text,
+            turnStartTemplate,
+            ...(body.cwd ? { cwd: body.cwd } : {}),
+            ...(typeof body.isSteering === "boolean" ? { isSteering: body.isSteering } : {})
+          });
+        } catch (error) {
+          const message = pushActionError("messages", error, {
+            threadId,
+            ownerClientId
+          });
+          jsonResponse(res, 500, { ok: false, error: message, threadId, ownerClientId });
+          return;
+        }
+
+        pushActionEvent("messages", "success", {
           threadId,
           ownerClientId
         });
@@ -668,17 +740,38 @@ const server = http.createServer(async (req, res) => {
         }
 
         const body = parseBody(SetModeBodySchema, await readJsonBody(req));
-        const ownerClientId = resolveOwnerClientId(threadOwnerById, threadId, body.ownerClientId);
+        let ownerClientId: string;
+        try {
+          ownerClientId = resolveOwnerClientId(threadOwnerById, threadId, body.ownerClientId);
+        } catch (error) {
+          const message = pushActionError("collaboration-mode", error, { threadId });
+          jsonResponse(res, 409, { ok: false, error: message, threadId });
+          return;
+        }
 
-        await service.setCollaborationMode({
+        pushActionEvent("collaboration-mode", "attempt", {
           threadId,
           ownerClientId,
-          collaborationMode: body.collaborationMode as CollaborationMode
+          collaborationMode: body.collaborationMode
         });
 
-        pushHistory("app", "out", {
-          type: "action",
-          action: "collaboration-mode",
+        try {
+          await service.setCollaborationMode({
+            threadId,
+            ownerClientId,
+            collaborationMode: body.collaborationMode as CollaborationMode
+          });
+        } catch (error) {
+          const message = pushActionError("collaboration-mode", error, {
+            threadId,
+            ownerClientId,
+            collaborationMode: body.collaborationMode
+          });
+          jsonResponse(res, 500, { ok: false, error: message, threadId, ownerClientId });
+          return;
+        }
+
+        pushActionEvent("collaboration-mode", "success", {
           threadId,
           ownerClientId,
           collaborationMode: body.collaborationMode
@@ -698,18 +791,45 @@ const server = http.createServer(async (req, res) => {
         }
 
         const body = parseBody(SubmitUserInputBodySchema, await readJsonBody(req));
-        const ownerClientId = resolveOwnerClientId(threadOwnerById, threadId, body.ownerClientId);
+        let ownerClientId: string;
+        try {
+          ownerClientId = resolveOwnerClientId(threadOwnerById, threadId, body.ownerClientId);
+        } catch (error) {
+          const message = pushActionError("user-input", error, { threadId, requestId: body.requestId });
+          jsonResponse(res, 409, { ok: false, error: message, threadId, requestId: body.requestId });
+          return;
+        }
 
-        await service.submitUserInput({
+        pushActionEvent("user-input", "attempt", {
           threadId,
           ownerClientId,
-          requestId: body.requestId,
-          response: parseUserInputResponsePayload(body.response)
+          requestId: body.requestId
         });
 
-        pushHistory("app", "out", {
-          type: "action",
-          action: "user-input",
+        try {
+          await service.submitUserInput({
+            threadId,
+            ownerClientId,
+            requestId: body.requestId,
+            response: parseUserInputResponsePayload(body.response)
+          });
+        } catch (error) {
+          const message = pushActionError("user-input", error, {
+            threadId,
+            ownerClientId,
+            requestId: body.requestId
+          });
+          jsonResponse(res, 500, {
+            ok: false,
+            error: message,
+            threadId,
+            ownerClientId,
+            requestId: body.requestId
+          });
+          return;
+        }
+
+        pushActionEvent("user-input", "success", {
           threadId,
           ownerClientId,
           requestId: body.requestId
@@ -730,16 +850,35 @@ const server = http.createServer(async (req, res) => {
         }
 
         const body = parseBody(InterruptBodySchema, await readJsonBody(req));
-        const ownerClientId = resolveOwnerClientId(threadOwnerById, threadId, body.ownerClientId);
+        let ownerClientId: string;
+        try {
+          ownerClientId = resolveOwnerClientId(threadOwnerById, threadId, body.ownerClientId);
+        } catch (error) {
+          const message = pushActionError("interrupt", error, { threadId });
+          jsonResponse(res, 409, { ok: false, error: message, threadId });
+          return;
+        }
 
-        await service.interrupt({
+        pushActionEvent("interrupt", "attempt", {
           threadId,
           ownerClientId
         });
 
-        pushHistory("app", "out", {
-          type: "action",
-          action: "interrupt",
+        try {
+          await service.interrupt({
+            threadId,
+            ownerClientId
+          });
+        } catch (error) {
+          const message = pushActionError("interrupt", error, {
+            threadId,
+            ownerClientId
+          });
+          jsonResponse(res, 500, { ok: false, error: message, threadId, ownerClientId });
+          return;
+        }
+
+        pushActionEvent("interrupt", "success", {
           threadId,
           ownerClientId
         });

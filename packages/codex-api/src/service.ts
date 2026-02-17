@@ -1,11 +1,10 @@
 import {
+  type TurnStartParams,
   type CollaborationMode,
   parseUserInputResponsePayload,
   type UserInputResponsePayload
 } from "@codex-monitor/codex-protocol";
-import type { AppServerClient } from "./app-server-client.js";
 import type { DesktopIpcClient } from "./ipc-client.js";
-import { findLatestTurnParamsTemplate } from "./live-state.js";
 
 export interface SendMessageInput {
   threadId: string;
@@ -13,6 +12,7 @@ export interface SendMessageInput {
   text: string;
   cwd?: string;
   isSteering?: boolean;
+  turnStartTemplate: TurnStartParams;
 }
 
 export interface SetModeInput {
@@ -34,11 +34,9 @@ export interface InterruptInput {
 }
 
 export class CodexMonitorService {
-  private readonly appClient: AppServerClient;
   private readonly ipcClient: DesktopIpcClient;
 
-  public constructor(appClient: AppServerClient, ipcClient: DesktopIpcClient) {
-    this.appClient = appClient;
+  public constructor(ipcClient: DesktopIpcClient) {
     this.ipcClient = ipcClient;
   }
 
@@ -48,8 +46,7 @@ export class CodexMonitorService {
       throw new Error("Message text is required");
     }
 
-    const threadResult = await this.appClient.readThread(input.threadId, true);
-    const template = findLatestTurnParamsTemplate(threadResult.thread);
+    const template = input.turnStartTemplate;
 
     const turnStartParams = {
       ...template,

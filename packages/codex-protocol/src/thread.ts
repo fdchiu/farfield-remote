@@ -41,7 +41,7 @@ export const TurnStartParamsSchema = z
     sandboxPolicy: z.object({ type: NonEmptyStringSchema }).passthrough().optional(),
     summary: z.string().optional(),
     attachments: z.array(JsonValueSchema).optional(),
-    collaborationMode: CollaborationModeSchema.optional(),
+    collaborationMode: z.union([CollaborationModeSchema, z.null()]).optional(),
     personality: z.union([JsonValueSchema, z.null()]).optional(),
     outputSchema: z.union([JsonValueSchema, z.null()]).optional()
   })
@@ -248,6 +248,7 @@ export const ThreadStreamStateChangedParamsSchema = z
   .strict();
 
 export type CollaborationMode = z.infer<typeof CollaborationModeSchema>;
+export type TurnStartParams = z.infer<typeof TurnStartParamsSchema>;
 export type UserInputRequest = z.infer<typeof UserInputRequestSchema>;
 export type ThreadConversationState = z.infer<typeof ThreadConversationStateSchema>;
 export type ThreadStreamPatch = z.infer<typeof ThreadStreamPatchSchema>;

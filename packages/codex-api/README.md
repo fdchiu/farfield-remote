@@ -36,15 +36,11 @@ Typed client layer for Codex app-server and desktop IPC.
 
 ```ts
 import {
-  AppServerClient,
   CodexMonitorService,
-  DesktopIpcClient
+  DesktopIpcClient,
+  findLatestTurnParamsTemplate
 } from "@codex-monitor/codex-api";
-
-const app = new AppServerClient({
-  executablePath: "/Applications/Codex.app/Contents/Resources/codex",
-  userAgent: "codex-monitor-web/0.2.0"
-});
+import { parseThreadConversationState } from "@codex-monitor/codex-protocol";
 
 const ipc = new DesktopIpcClient({
   socketPath: "/tmp/codex-ipc/ipc-501.sock"
@@ -53,11 +49,18 @@ const ipc = new DesktopIpcClient({
 await ipc.connect();
 await ipc.initialize("codex-monitor-web/0.2.0");
 
-const service = new CodexMonitorService(app, ipc);
+const service = new CodexMonitorService(ipc);
+
+const liveStatePayload = await fetch("http://127.0.0.1:4311/api/threads/thread-id/live-state").then((r) =>
+  r.json()
+);
+const conversationState = parseThreadConversationState(liveStatePayload.conversationState);
+const turnStartTemplate = findLatestTurnParamsTemplate(conversationState);
 
 await service.sendMessage({
   threadId: "thread-id",
   ownerClientId: "desktop-client-id",
-  text: "hello"
+  text: "hello",
+  turnStartTemplate
 });
 ```
