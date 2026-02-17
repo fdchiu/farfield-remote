@@ -433,6 +433,10 @@ export function App(): React.JSX.Element {
     if (selectedReasoningEffort) vals.add(selectedReasoningEffort);
     return Array.from(vals);
   }, [conversationState?.latestReasoningEffort, modes, selectedReasoningEffort]);
+  const effortOptionsWithoutAssumedDefault = useMemo(
+    () => effortOptions.filter((option) => option !== ASSUMED_APP_DEFAULT_EFFORT),
+    [effortOptions]
+  );
 
   const modelOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -448,6 +452,10 @@ export function App(): React.JSX.Element {
     if (selectedModelId && !map.has(selectedModelId)) map.set(selectedModelId, selectedModelId);
     return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
   }, [conversationState?.latestModel, models, selectedModelId]);
+  const modelOptionsWithoutAssumedDefault = useMemo(
+    () => modelOptions.filter((option) => option.id !== ASSUMED_APP_DEFAULT_MODEL),
+    [modelOptions]
+  );
 
   const turns = conversationState?.turns ?? [];
   const conversationItemCount = useMemo(
@@ -623,7 +631,7 @@ export function App(): React.JSX.Element {
     const cs = conversationState;
     if (!cs) return;
     const lm = cs.latestCollaborationMode;
-    const nextModeKey = lm?.mode ?? selectedModeKey;
+    const nextModeKey = lm?.mode ?? "";
     const nextModelId = lm?.settings.model ?? cs.latestModel ?? "";
     const nextReasoningEffort = lm?.settings.reasoning_effort ?? cs.latestReasoningEffort ?? "";
     if (nextModeKey) setSelectedModeKey(nextModeKey);
@@ -631,7 +639,7 @@ export function App(): React.JSX.Element {
     setSelectedReasoningEffort(nextReasoningEffort);
     lastAppliedModeSignatureRef.current = `${nextModeKey}|${nextModelId}|${nextReasoningEffort}`;
     setHasHydratedModeFromLiveState(true);
-  }, [conversationState, selectedModeKey]);
+  }, [conversationState]);
 
   useEffect(() => {
     lastAppliedModeSignatureRef.current = "";
@@ -1262,7 +1270,7 @@ export function App(): React.JSX.Element {
                       </SelectTrigger>
                       <SelectContent position="popper">
                         <SelectItem value={APP_DEFAULT_VALUE}>{ASSUMED_APP_DEFAULT_MODEL}</SelectItem>
-                        {modelOptions.map((option) => (
+                        {modelOptionsWithoutAssumedDefault.map((option) => (
                           <SelectItem key={option.id} value={option.id}>
                             {option.label}
                           </SelectItem>
@@ -1281,19 +1289,21 @@ export function App(): React.JSX.Element {
                       </SelectTrigger>
                       <SelectContent position="popper">
                         <SelectItem value={APP_DEFAULT_VALUE}>{ASSUMED_APP_DEFAULT_EFFORT}</SelectItem>
-                        {effortOptions.map((option) => (
+                        {effortOptionsWithoutAssumedDefault.map((option) => (
                           <SelectItem key={option} value={option}>
                             {option}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    {isModeSyncing && (
-                      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Loader2 size={11} className="animate-spin" />
-                        syncing
-                      </span>
-                    )}
+                    <span
+                      className={`inline-flex w-[62px] items-center gap-1.5 text-xs text-muted-foreground transition-opacity ${
+                        isModeSyncing ? "opacity-100" : "opacity-0"
+                      }`}
+                    >
+                      <Loader2 size={11} className={isModeSyncing ? "animate-spin" : ""} />
+                      syncing
+                    </span>
                     {pendingRequests.length > 0 && (
                       <span className="text-xs text-amber-500 dark:text-amber-400">
                         {pendingRequests.length} pending
