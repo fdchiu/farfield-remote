@@ -114,6 +114,29 @@ describe("codex-protocol schemas", () => {
     expect(parsed.turns[0]?.items[0]?.type).toBe("userInputResponse");
   });
 
+  it("parses thread conversation state with unknown item types", () => {
+    const parsed = parseThreadConversationState({
+      id: "thread-123",
+      turns: [
+        {
+          status: "completed",
+          items: [
+            {
+              id: "item-unknown",
+              type: "toolCall",
+              payload: {
+                hello: "world"
+              }
+            }
+          ]
+        }
+      ],
+      requests: []
+    });
+
+    expect(parsed.turns[0]?.items[0]?.type).toBe("toolCall");
+  });
+
   it("parses generic ipc request frames", () => {
     const parsed = parseIpcFrame({
       type: "request",

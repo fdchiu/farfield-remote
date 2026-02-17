@@ -1,7 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
 import { randomUUID } from "node:crypto";
-import { AppServerError } from "./errors.js";
+import {
+  AppServerRpcError,
+  AppServerTransportError
+} from "./errors.js";
 import { JsonRpcRequestSchema, parseJsonRpcResponse } from "./json-rpc.js";
 
 export interface AppServerTransport {
@@ -64,14 +67,14 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
 
     child.on("exit", (code, signal) => {
       const reason = `app-server exited (code=${String(code)}, signal=${String(signal)})`;
-      this.rejectAll(new AppServerError(reason));
+      this.rejectAll(new AppServerTransportError(reason));
       this.process = null;
       this.initialized = false;
       this.initializeInFlight = null;
     });
 
     child.on("error", (error) => {
-      this.rejectAll(new AppServerError(`app-server process error: ${error.message}`));
+      this.rejectAll(new AppServerTransportError(`app-server process error: ${error.message}`));
       this.process = null;
       this.initialized = false;
       this.initializeInFlight = null;
@@ -88,7 +91,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
       try {
         raw = JSON.parse(trimmed);
       } catch {
-        this.rejectAll(new AppServerError("app-server returned invalid JSON"));
+        this.rejectAll(new AppServerTransportError("app-server returned invalid JSON"));
         return;
       }
 
@@ -97,7 +100,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
         message = parseJsonRpcResponse(raw);
       } catch (error) {
         this.rejectAll(
-          new AppServerError(
+          new AppServerTransportError(
             `app-server response schema mismatch: ${error instanceof Error ? error.message : String(error)}`
           )
         );
@@ -113,11 +116,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
       clearTimeout(pending.timer);
 
       if (message.error) {
-        pending.reject(
-          new AppServerError(
-            `app-server error ${message.error.code}: ${message.error.message}`
-          )
-        );
+        pending.reject(new AppServerRpcError(message.error.code, message.error.message, message.error.data));
         return;
       }
 
@@ -152,7 +151,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
   private async sendRequest(method: string, params: unknown, timeoutMs?: number): Promise<unknown> {
     const processHandle = this.process;
     if (!processHandle) {
-      throw new AppServerError("app-server failed to start");
+      throw new AppServerTransportError("app-server failed to start");
     }
 
     const id = ++this.requestId;
@@ -168,7 +167,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new AppServerError(`app-server request timed out: ${method}`));
+        reject(new AppServerTransportError(`app-server request timed out: ${method}`));
       }, timeout);
 
       this.pending.set(id, { timer, resolve, reject });
@@ -185,7 +184,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
 
         clearTimeout(pending.timer);
         this.pending.delete(id);
-        pending.reject(new AppServerError(`failed to write app-server request: ${error.message}`));
+        pending.reject(new AppServerTransportError(`failed to write app-server request: ${error.message}`));
       });
     });
   }
@@ -215,7 +214,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
       );
 
       if (!result || typeof result !== "object") {
-        throw new AppServerError("app-server initialize returned invalid result");
+        throw new AppServerTransportError("app-server initialize returned invalid result");
       }
 
       this.initialized = true;
@@ -249,7 +248,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
     this.process = null;
     this.initialized = false;
     this.initializeInFlight = null;
-    this.rejectAll(new AppServerError("app-server transport closed"));
+    this.rejectAll(new AppServerTransportError("app-server transport closed"));
 
     processHandle.kill("SIGTERM");
   }

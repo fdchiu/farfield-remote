@@ -109,12 +109,20 @@ export const UserInputResponseItemSchema = z
   })
   .strict();
 
+export const UnknownTurnItemSchema = z
+  .object({
+    type: NonEmptyStringSchema,
+    id: z.union([NonEmptyStringSchema, z.null()]).optional()
+  })
+  .passthrough();
+
 export const TurnItemSchema = z.union([
   UserMessageItemSchema,
   AgentMessageItemSchema,
   ReasoningItemSchema,
   PlanItemSchema,
-  UserInputResponseItemSchema
+  UserInputResponseItemSchema,
+  UnknownTurnItemSchema
 ]);
 
 export const UserInputOptionSchema = z

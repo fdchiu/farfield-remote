@@ -141,9 +141,10 @@ export function reduceThreadStreamEvents(
     }
 
     if (!next.conversationState) {
-      throw new Error(
-        `Received patches for thread ${threadId} without a known snapshot state`
-      );
+      // The desktop app can emit patches before the first snapshot for a thread.
+      // Ignore these until we have a concrete base state.
+      byThread.set(threadId, next);
+      continue;
     }
 
     let updated = next.conversationState;

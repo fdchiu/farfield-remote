@@ -86,4 +86,57 @@ describe("live-state reducer", () => {
 
     expect(thread?.conversationState?.requests.length).toBe(1);
   });
+
+  it("keeps reducer alive when patches arrive before snapshot", () => {
+    const patchEvent = parseThreadStreamStateChangedBroadcast({
+      type: "broadcast",
+      method: "thread-stream-state-changed",
+      sourceClientId: "client-a",
+      version: 4,
+      params: {
+        conversationId: "thread-2",
+        type: "thread-stream-state-changed",
+        version: 4,
+        change: {
+          type: "patches",
+          patches: [
+            {
+              op: "add",
+              path: ["turns", 0],
+              value: {
+                status: "inProgress",
+                items: []
+              }
+            }
+          ]
+        }
+      }
+    });
+
+    const snapshotEvent = parseThreadStreamStateChangedBroadcast({
+      type: "broadcast",
+      method: "thread-stream-state-changed",
+      sourceClientId: "client-a",
+      version: 4,
+      params: {
+        conversationId: "thread-2",
+        type: "thread-stream-state-changed",
+        version: 4,
+        change: {
+          type: "snapshot",
+          conversationState: {
+            id: "thread-2",
+            turns: [],
+            requests: []
+          }
+        }
+      }
+    });
+
+    const state = reduceThreadStreamEvents([patchEvent, snapshotEvent]);
+    const thread = state.get("thread-2");
+
+    expect(thread?.conversationState?.id).toBe("thread-2");
+    expect(thread?.conversationState?.turns.length).toBe(0);
+  });
 });

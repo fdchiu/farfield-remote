@@ -5,6 +5,8 @@ import os from "node:os";
 import { randomUUID } from "node:crypto";
 import {
   AppServerClient,
+  AppServerRpcError,
+  AppServerTransportError,
   CodexMonitorService,
   DesktopIpcClient,
   findLatestTurnParamsTemplate,
@@ -267,13 +269,29 @@ function setAppReady(next: boolean): void {
   broadcastRuntimeState();
 }
 
+function isThreadNotLoadedError(error: unknown): boolean {
+  if (!(error instanceof AppServerRpcError)) {
+    return false;
+  }
+
+  if (error.code !== -32600) {
+    return false;
+  }
+
+  return error.message.includes("thread not loaded");
+}
+
 async function runAppServerCall<T>(operation: () => Promise<T>): Promise<T> {
   try {
     const result = await operation();
     setAppReady(true);
     return result;
   } catch (error) {
-    setAppReady(false);
+    if (error instanceof AppServerTransportError) {
+      setAppReady(false);
+    } else {
+      setAppReady(true);
+    }
     throw error;
   }
 }
@@ -633,7 +651,20 @@ const server = http.createServer(async (req, res) => {
 
       if (req.method === "GET" && segments.length === 3) {
         const includeTurns = parseBoolean(url.searchParams.get("includeTurns"), true);
-        const result = await runAppServerCall(() => appClient.readThread(threadId, includeTurns));
+        let result;
+        try {
+          result = await runAppServerCall(() => appClient.readThread(threadId, includeTurns));
+        } catch (error) {
+          if (isThreadNotLoadedError(error)) {
+            jsonResponse(res, 404, {
+              ok: false,
+              error: `Thread not loaded in app-server: ${threadId}`,
+              threadId
+            });
+            return;
+          }
+          throw error;
+        }
         jsonResponse(res, 200, { ok: true, ...result });
         return;
       }

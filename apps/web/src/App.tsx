@@ -120,6 +120,10 @@ function modeToCollaborationMode(mode: ModesResponse["data"][number]) {
   };
 }
 
+function isThreadNotLoadedMessage(message: string): boolean {
+  return message.toLowerCase().includes("thread not loaded");
+}
+
 export function App(): React.JSX.Element {
   const [error, setError] = useState("");
 
@@ -191,12 +195,14 @@ export function App(): React.JSX.Element {
     setTraceStatus(nextTrace);
     setHistory(nextHistory.history);
 
-    if (!selectedThreadIdRef.current && nextThreads.data.length > 0) {
-      const firstThread = nextThreads.data[0];
-      if (firstThread) {
-        setSelectedThreadId(firstThread.id);
+    setSelectedThreadId((current) => {
+      if (current && nextThreads.data.some((thread) => thread.id === current)) {
+        return current;
       }
-    }
+
+      const firstThread = nextThreads.data[0];
+      return firstThread?.id ?? null;
+    });
 
     setSelectedModeKey((current) => {
       if (current) {
@@ -229,7 +235,20 @@ export function App(): React.JSX.Element {
     setHistory(nextHistory.history);
 
     if (selectedThreadIdRef.current) {
-      await loadSelectedThread(selectedThreadIdRef.current);
+      try {
+        await loadSelectedThread(selectedThreadIdRef.current);
+      } catch (nextError) {
+        const message = nextError instanceof Error ? nextError.message : String(nextError);
+        if (isThreadNotLoadedMessage(message)) {
+          setSelectedThread(null);
+          setLiveState(null);
+          setStreamEvents([]);
+          setSelectedThreadId(null);
+          setError(message);
+          return;
+        }
+        throw nextError;
+      }
     }
   }, [loadSelectedThread]);
 
@@ -282,7 +301,15 @@ export function App(): React.JSX.Element {
     }
 
     void loadSelectedThread(selectedThreadId).catch((nextError) => {
-      setError(nextError instanceof Error ? nextError.message : String(nextError));
+      const message = nextError instanceof Error ? nextError.message : String(nextError);
+      setError(message);
+
+      if (isThreadNotLoadedMessage(message)) {
+        setSelectedThread(null);
+        setLiveState(null);
+        setStreamEvents([]);
+        setSelectedThreadId(null);
+      }
     });
   }, [loadSelectedThread, selectedThreadId]);
 
