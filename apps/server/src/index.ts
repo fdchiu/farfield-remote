@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import {
   AppServerClient,
   AppServerRpcError,
@@ -68,6 +69,18 @@ function resolveIpcSocketPath(): string {
 
   const uid = process.getuid?.() ?? 0;
   return path.join(os.tmpdir(), "codex-ipc", `ipc-${uid}.sock`);
+}
+
+function resolveGitCommitHash(): string | null {
+  try {
+    const hash = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      cwd: DEFAULT_WORKSPACE,
+      encoding: "utf8"
+    }).trim();
+    return hash.length > 0 ? hash : null;
+  } catch {
+    return null;
+  }
 }
 
 function jsonResponse(res: ServerResponse, statusCode: number, body: unknown): void {
@@ -152,6 +165,7 @@ const recentTraces: TraceSummary[] = [];
 const runtimeState = {
   appExecutable: resolveCodexExecutablePath(),
   socketPath: resolveIpcSocketPath(),
+  gitCommit: resolveGitCommitHash(),
   appReady: false,
   ipcConnected: false,
   ipcInitialized: false,

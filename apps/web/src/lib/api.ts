@@ -25,6 +25,7 @@ const HealthResponseSchema = z
         appReady: z.boolean(),
         ipcConnected: z.boolean(),
         ipcInitialized: z.boolean(),
+        gitCommit: z.string().nullable().optional(),
         lastError: z.string().nullable(),
         historyCount: z.number().int().nonnegative(),
         threadOwnerCount: z.number().int().nonnegative()

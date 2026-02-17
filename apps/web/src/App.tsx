@@ -97,20 +97,6 @@ const DEFAULT_EFFORT_OPTIONS = ["minimal", "low", "medium", "high", "xhigh"] as 
 const INITIAL_VISIBLE_CHAT_ITEMS = 180;
 const VISIBLE_CHAT_ITEMS_STEP = 120;
 
-/* ── Small UI atoms ─────────────────────────────────────────── */
-function StatusDot({ ok, label }: { ok: boolean | undefined; label: string }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <span
-        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-          ok === undefined ? "bg-muted-foreground/40" : ok ? "bg-success" : "bg-danger"
-        }`}
-      />
-      <span className="text-xs text-muted-foreground">{label}</span>
-    </div>
-  );
-}
-
 function IconBtn({
   onClick,
   disabled,
@@ -430,6 +416,15 @@ export function App(): React.JSX.Element {
   }, [firstVisibleChatItemIndex, turns]);
   const lastTurn = turns[turns.length - 1];
   const isGenerating = lastTurn?.status === "in-progress";
+  const commitLabel = health?.state.gitCommit ?? "unknown";
+  const allSystemsReady =
+    health?.state.appReady === true &&
+    health?.state.ipcConnected === true &&
+    health?.state.ipcInitialized === true;
+  const hasAnySystemFailure =
+    health?.state.appReady === false ||
+    health?.state.ipcConnected === false ||
+    health?.state.ipcInitialized === false;
 
   /* Data loading */
   const loadCoreData = useCallback(async () => {
@@ -845,15 +840,34 @@ export function App(): React.JSX.Element {
         </div>
 
         {/* Sidebar footer — status */}
-        <div className="p-4 border-t border-sidebar-border space-y-2 shrink-0">
-          <StatusDot ok={health?.state.appReady} label="App" />
-          <StatusDot ok={health?.state.ipcConnected} label="IPC" />
-          <StatusDot ok={health?.state.ipcInitialized} label="Init" />
-          {liveState?.ownerClientId && (
-            <div className="text-[10px] text-muted-foreground/50 font-mono pt-1">
-              {liveState.ownerClientId.slice(0, 8)}
-            </div>
-          )}
+        <div className="p-3 border-t border-sidebar-border shrink-0">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted/40 transition-colors cursor-default">
+                <span
+                  className={`h-2 w-2 rounded-full shrink-0 ${
+                    allSystemsReady
+                      ? "bg-success"
+                      : hasAnySystemFailure
+                        ? "bg-danger"
+                        : "bg-muted-foreground/40"
+                  }`}
+                />
+                <span className="font-mono">commit {commitLabel}</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="start" className="space-y-1 text-xs">
+              <div className="font-mono text-[11px]">commit {commitLabel}</div>
+              <div>App: {health?.state.appReady ? "ok" : "not ready"}</div>
+              <div>IPC: {health?.state.ipcConnected ? "connected" : "disconnected"}</div>
+              <div>Init: {health?.state.ipcInitialized ? "ready" : "not ready"}</div>
+              {health?.state.lastError && (
+                <div className="max-w-64 break-words text-destructive">
+                  Error: {health.state.lastError}
+                </div>
+              )}
+            </TooltipContent>
+          </Tooltip>
         </div>
       </aside>
 
