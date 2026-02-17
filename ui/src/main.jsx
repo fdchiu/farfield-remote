@@ -6,10 +6,9 @@ const THREAD_LIMIT = 80;
 const THREAD_MAX_PAGES = 20;
 const MAX_VISIBLE_TURNS_STEP = 12;
 const RAW_LOG_LIMIT = 80;
-const STATUS_POLL_MS = 4000;
-const THREADS_POLL_MS = 20000;
-const TURN_POLL_IDLE_MS = 6000;
-const TURN_POLL_ACTIVE_MS = 1400;
+const STATUS_POLL_MS = 12000;
+const THREAD_SYNC_DEBOUNCE_MS = 300;
+const THREAD_LIST_SYNC_DEBOUNCE_MS = 1500;
 
 function formatEpochSeconds(seconds) {
   if (!Number.isFinite(seconds)) {
@@ -160,6 +159,7 @@ function App() {
 
   const [rawLive, setRawLive] = useState(false);
   const [rawEntries, setRawEntries] = useState([]);
+  const [liveConnected, setLiveConnected] = useState(false);
 
   const [selectedReplayEntryId, setSelectedReplayEntryId] = useState("");
   const [selectedReplayDetail, setSelectedReplayDetail] = useState(null);
@@ -168,6 +168,11 @@ function App() {
   const [replayResult, setReplayResult] = useState("");
 
   const selectedThreadRequestRef = useRef(0);
+  const selectedThreadIdRef = useRef(null);
+  const rawLiveRef = useRef(false);
+  const selectedThreadRefreshTimerRef = useRef(null);
+  const threadListRefreshTimerRef = useRef(null);
+  const streamEventsRefreshTimerRef = useRef(null);
 
   const setError = useCallback((error) => {
     setErrorMessage(toErrorMessage(error));
@@ -300,11 +305,6 @@ function App() {
     }
   }, []);
 
-  const hasActiveTurn = useMemo(() => {
-    const turns = Array.isArray(selectedThread?.turns) ? selectedThread.turns : [];
-    return turns.some((turn) => turn.status === "inProgress");
-  }, [selectedThread]);
-
   const visibleTurnData = useMemo(() => {
     const turns = Array.isArray(selectedThread?.turns) ? selectedThread.turns : [];
     const clipped = turns.slice(-visibleTurns);
@@ -333,6 +333,116 @@ function App() {
   const selectedReplayIsRequest = selectedReplayType === "request";
 
   useEffect(() => {
+    selectedThreadIdRef.current = selectedThreadId;
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    rawLiveRef.current = rawLive;
+  }, [rawLive]);
+
+  const scheduleThreadRefresh = useCallback(
+    (threadId) => {
+      if (!threadId) {
+        return;
+      }
+      if (selectedThreadRefreshTimerRef.current) {
+        clearTimeout(selectedThreadRefreshTimerRef.current);
+      }
+      selectedThreadRefreshTimerRef.current = setTimeout(() => {
+        selectedThreadRefreshTimerRef.current = null;
+        if (selectedThreadIdRef.current !== threadId) {
+          return;
+        }
+        loadSelectedThread(threadId).catch(() => {
+          // Silent background retry.
+        });
+      }, THREAD_SYNC_DEBOUNCE_MS);
+    },
+    [loadSelectedThread]
+  );
+
+  const scheduleThreadListRefresh = useCallback(
+    (options = {}) => {
+      const { all = false } = options;
+      if (threadListRefreshTimerRef.current) {
+        clearTimeout(threadListRefreshTimerRef.current);
+      }
+      threadListRefreshTimerRef.current = setTimeout(() => {
+        threadListRefreshTimerRef.current = null;
+        loadThreads({ all }).catch(() => {
+          // Silent background retry.
+        });
+      }, THREAD_LIST_SYNC_DEBOUNCE_MS);
+    },
+    [loadThreads]
+  );
+
+  const scheduleStreamEventsRefresh = useCallback(
+    (threadId) => {
+      if (!threadId) {
+        return;
+      }
+      if (streamEventsRefreshTimerRef.current) {
+        clearTimeout(streamEventsRefreshTimerRef.current);
+      }
+      streamEventsRefreshTimerRef.current = setTimeout(() => {
+        streamEventsRefreshTimerRef.current = null;
+        if (selectedThreadIdRef.current !== threadId) {
+          return;
+        }
+        loadThreadStreamEvents(threadId, { silent: true }).catch(() => {
+          // Silent background retry.
+        });
+      }, THREAD_SYNC_DEBOUNCE_MS);
+    },
+    [loadThreadStreamEvents]
+  );
+
+  const handleIncomingHistoryEntry = useCallback(
+    (entry, options = {}) => {
+      const { captureRaw = true } = options;
+      if (!entry || typeof entry !== "object") {
+        return;
+      }
+
+      if (captureRaw && rawLiveRef.current && entry.source === "ipc") {
+        setRawEntries((current) => {
+          const next = [...current, entry];
+          if (next.length <= RAW_LOG_LIMIT) {
+            return next;
+          }
+          return next.slice(next.length - RAW_LOG_LIMIT);
+        });
+      }
+
+      const method =
+        (typeof entry.meta?.method === "string" && entry.meta.method) ||
+        (typeof entry.payload?.method === "string" && entry.payload.method) ||
+        null;
+
+      const threadId =
+        (typeof entry.meta?.threadId === "string" && entry.meta.threadId) ||
+        null;
+
+      if (!threadId || !method || !method.startsWith("thread-")) {
+        return;
+      }
+
+      scheduleThreadListRefresh();
+
+      if (selectedThreadIdRef.current === threadId) {
+        const ownerClientId = entry.payload?.sourceClientId;
+        if (typeof ownerClientId === "string" && ownerClientId.trim()) {
+          setStreamOwnerClientId(ownerClientId.trim());
+        }
+        scheduleThreadRefresh(threadId);
+        scheduleStreamEventsRefresh(threadId);
+      }
+    },
+    [scheduleThreadListRefresh, scheduleThreadRefresh, scheduleStreamEventsRefresh]
+  );
+
+  useEffect(() => {
     const run = async () => {
       try {
         clearError();
@@ -356,16 +466,6 @@ function App() {
   }, [loadState, loadTraceStatus]);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      loadThreads({ all: false }).catch(() => {
-        // Silent background retry.
-      });
-    }, THREADS_POLL_MS);
-
-    return () => clearInterval(timer);
-  }, [loadThreads]);
-
-  useEffect(() => {
     loadThreads({ all: true }).catch((error) => {
       setError(error);
     });
@@ -381,52 +481,26 @@ function App() {
     loadSelectedThread(selectedThreadId).catch((error) => {
       setError(error);
     });
-  }, [loadSelectedThread, selectedThreadId, setError]);
-
-  useEffect(() => {
-    if (!selectedThreadId) {
-      return;
-    }
-
-    const intervalMs = hasActiveTurn ? TURN_POLL_ACTIVE_MS : TURN_POLL_IDLE_MS;
-    const timer = setInterval(() => {
-      loadSelectedThread(selectedThreadId).catch(() => {
-        // Silent background retry.
-      });
-    }, intervalMs);
-
-    return () => clearInterval(timer);
-  }, [hasActiveTurn, loadSelectedThread, selectedThreadId]);
+    loadThreadStreamEvents(selectedThreadId).catch((error) => {
+      setError(error);
+    });
+  }, [loadSelectedThread, loadThreadStreamEvents, selectedThreadId, setError]);
 
   useEffect(() => {
     if (!selectedThreadId) {
       setStreamOwnerClientId(null);
       setStreamEvents([]);
-      return;
     }
-    loadThreadStreamEvents(selectedThreadId).catch((error) => {
-      setError(error);
-    });
-  }, [loadThreadStreamEvents, selectedThreadId, setError]);
+  }, [selectedThreadId]);
 
   useEffect(() => {
-    if (!selectedThreadId) {
-      return;
-    }
-    const timer = setInterval(() => {
-      loadThreadStreamEvents(selectedThreadId, { silent: true }).catch(() => {
-        // Silent background retry.
-      });
-    }, 1500);
-    return () => clearInterval(timer);
-  }, [loadThreadStreamEvents, selectedThreadId]);
-
-  useEffect(() => {
-    if (!rawLive) {
-      return;
-    }
-
     const source = new EventSource("/events");
+    source.onopen = () => {
+      setLiveConnected(true);
+    };
+    source.onerror = () => {
+      setLiveConnected(false);
+    };
     source.onmessage = (event) => {
       let payload;
       try {
@@ -441,28 +515,41 @@ function App() {
       }
 
       if (payload.type === "history" && Array.isArray(payload.messages)) {
-        const onlyIpc = payload.messages.filter((entry) => entry.source === "ipc");
-        setRawEntries(onlyIpc.slice(-RAW_LOG_LIMIT));
-        return;
-      }
-
-      if (payload.type !== "message" || !payload.entry || payload.entry.source !== "ipc") {
-        return;
-      }
-
-      setRawEntries((current) => {
-        const next = [...current, payload.entry];
-        if (next.length <= RAW_LOG_LIMIT) {
-          return next;
+        if (rawLiveRef.current) {
+          const onlyIpc = payload.messages.filter((entry) => entry.source === "ipc");
+          setRawEntries(onlyIpc.slice(-RAW_LOG_LIMIT));
         }
-        return next.slice(next.length - RAW_LOG_LIMIT);
-      });
+        for (const entry of payload.messages) {
+          handleIncomingHistoryEntry(entry, { captureRaw: false });
+        }
+        return;
+      }
+
+      if (payload.type !== "message" || !payload.entry) {
+        return;
+      }
+      handleIncomingHistoryEntry(payload.entry);
     };
 
     return () => {
+      setLiveConnected(false);
       source.close();
     };
-  }, [rawLive]);
+  }, [handleIncomingHistoryEntry]);
+
+  useEffect(() => {
+    return () => {
+      if (selectedThreadRefreshTimerRef.current) {
+        clearTimeout(selectedThreadRefreshTimerRef.current);
+      }
+      if (threadListRefreshTimerRef.current) {
+        clearTimeout(threadListRefreshTimerRef.current);
+      }
+      if (streamEventsRefreshTimerRef.current) {
+        clearTimeout(streamEventsRefreshTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedReplayEntryId) {
@@ -638,6 +725,7 @@ function App() {
       : "disconnected";
 
   const ipcStatusText = ipcHealthy ? "connected" : "disconnected";
+  const liveStatusText = liveConnected ? "streaming" : "reconnecting";
 
   return (
     <div className="page">
@@ -651,6 +739,7 @@ function App() {
         <div className="statusRow">
           <StatusPill label="App server" healthy={appHealthy} text={appStatusText} />
           <StatusPill label="Desktop socket" healthy={ipcHealthy} text={ipcStatusText} />
+          <StatusPill label="Live feed" healthy={liveConnected} text={liveStatusText} />
         </div>
       </header>
 
@@ -915,7 +1004,7 @@ function App() {
               <h2>Strict Replay</h2>
               <div className="buttonRow">
                 <button type="button" onClick={() => setRawLive((active) => !active)}>
-                  {rawLive ? "Stop live feed" : "Start live feed"}
+                  {rawLive ? "Stop raw capture" : "Start raw capture"}
                 </button>
                 <button type="button" onClick={() => setRawEntries([])}>
                   Clear feed
