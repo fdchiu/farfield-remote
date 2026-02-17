@@ -95,6 +95,6 @@ Only mark items done when they are fully complete and verified.
 
 ## Stage 8: Final Cleanup
 
-- [ ] Remove legacy files no longer used.
-- [ ] Confirm git status only includes intentional files.
-- [ ] Final pass on naming consistency and code comments.
+- [x] Remove legacy files no longer used.
+- [x] Confirm git status only includes intentional files.
+- [x] Final pass on naming consistency and code comments.
