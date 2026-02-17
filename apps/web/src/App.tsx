@@ -10,6 +10,8 @@ import {
   ArrowDown,
   ArrowUp,
   Bug,
+  Circle,
+  CircleDot,
   ChevronRight,
   CirclePause,
   Loader2,
@@ -104,6 +106,8 @@ const DEFAULT_EFFORT_OPTIONS = ["minimal", "low", "medium", "high", "xhigh"] as 
 const INITIAL_VISIBLE_CHAT_ITEMS = 180;
 const VISIBLE_CHAT_ITEMS_STEP = 120;
 const APP_DEFAULT_VALUE = "__app_default__";
+const ASSUMED_APP_DEFAULT_MODEL = "gpt-5.3-codex";
+const ASSUMED_APP_DEFAULT_EFFORT = "medium";
 
 function isPlanModeOption(mode: { mode: string; name: string }): boolean {
   return mode.mode.toLowerCase().includes("plan") || mode.name.toLowerCase().includes("plan");
@@ -444,18 +448,6 @@ export function App(): React.JSX.Element {
     if (selectedModelId && !map.has(selectedModelId)) map.set(selectedModelId, selectedModelId);
     return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
   }, [conversationState?.latestModel, models, selectedModelId]);
-  const currentAppDefaultModelLabel = useMemo(() => {
-    const currentModelId = conversationState?.latestModel;
-    if (!currentModelId) return "Model: app default";
-    const matched = modelOptions.find((option) => option.id === currentModelId);
-    const shown = matched?.label ?? currentModelId;
-    return `Model: app default (${shown})`;
-  }, [conversationState?.latestModel, modelOptions]);
-  const currentAppDefaultEffortLabel = useMemo(() => {
-    const currentEffort = conversationState?.latestReasoningEffort;
-    if (!currentEffort) return "Effort: app default";
-    return `Effort: app default (${currentEffort})`;
-  }, [conversationState?.latestReasoningEffort]);
 
   const turns = conversationState?.turns ?? [];
   const conversationItemCount = useMemo(
@@ -1228,7 +1220,7 @@ export function App(): React.JSX.Element {
                   </div>
 
                   {/* Toolbar */}
-                  <div className="flex flex-wrap items-center gap-2 px-1">
+                  <div className="flex flex-wrap items-center gap-1.5 px-1">
                     <Button
                       type="button"
                       onClick={() => {
@@ -1243,23 +1235,24 @@ export function App(): React.JSX.Element {
                       size="sm"
                       className={`rounded-full text-xs ${
                         isPlanModeEnabled
-                          ? "bg-muted text-foreground hover:bg-muted"
+                          ? "bg-blue-500/15 text-blue-600 hover:bg-blue-500/20 dark:text-blue-300"
                           : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
                       }`}
                       disabled={!selectedThreadId || !planModeOption}
                     >
-                      Plan mode
+                      {isPlanModeEnabled ? <CircleDot size={10} /> : <Circle size={10} />}
+                      Plan
                     </Button>
                     <Select
                       value={selectedModelId || APP_DEFAULT_VALUE}
                       onValueChange={(value) => setSelectedModelId(value === APP_DEFAULT_VALUE ? "" : value)}
                       disabled={!selectedThreadId}
                     >
-                      <SelectTrigger className="h-8 w-[180px] rounded-full border-0 bg-transparent dark:bg-transparent px-3 text-xs text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-0">
+                      <SelectTrigger className="h-8 w-[146px] sm:w-[176px] rounded-full border-0 bg-transparent dark:bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-0">
                         <SelectValue placeholder="Model" />
                       </SelectTrigger>
                       <SelectContent position="popper">
-                        <SelectItem value={APP_DEFAULT_VALUE}>{currentAppDefaultModelLabel}</SelectItem>
+                        <SelectItem value={APP_DEFAULT_VALUE}>App default ({ASSUMED_APP_DEFAULT_MODEL})</SelectItem>
                         {modelOptions.map((option) => (
                           <SelectItem key={option.id} value={option.id}>
                             {option.label}
@@ -1274,11 +1267,11 @@ export function App(): React.JSX.Element {
                       }
                       disabled={!selectedThreadId}
                     >
-                      <SelectTrigger className="h-8 w-[165px] rounded-full border-0 bg-transparent dark:bg-transparent px-3 text-xs text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-0">
+                      <SelectTrigger className="h-8 w-[118px] sm:w-[148px] rounded-full border-0 bg-transparent dark:bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-0">
                         <SelectValue placeholder="Effort" />
                       </SelectTrigger>
                       <SelectContent position="popper">
-                        <SelectItem value={APP_DEFAULT_VALUE}>{currentAppDefaultEffortLabel}</SelectItem>
+                        <SelectItem value={APP_DEFAULT_VALUE}>App default ({ASSUMED_APP_DEFAULT_EFFORT})</SelectItem>
                         {effortOptions.map((option) => (
                           <SelectItem key={option} value={option}>
                             {option}
@@ -1297,9 +1290,6 @@ export function App(): React.JSX.Element {
                         {pendingRequests.length} pending
                       </span>
                     )}
-                    <span className="ml-auto text-[11px] text-muted-foreground/40 select-none">
-                      ⌘↵ send
-                    </span>
                   </div>
                 </div>
               </div>
