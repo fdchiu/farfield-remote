@@ -1,9 +1,5 @@
 import { z } from "zod";
-import {
-  NonEmptyStringSchema,
-  NonNegativeIntSchema,
-  NullableNonEmptyStringSchema
-} from "./common.js";
+import { NonEmptyStringSchema, NonNegativeIntSchema, NullableNonEmptyStringSchema } from "./common.js";
 import { ProtocolValidationError } from "./errors.js";
 import { CollaborationModeSchema, ThreadConversationStateSchema } from "./thread.js";
 
@@ -38,20 +34,32 @@ export const AppServerReadThreadResponseSchema = z
   })
   .strict();
 
+export const AppServerModelReasoningEffortSchema = z
+  .object({
+    reasoningEffort: NonEmptyStringSchema,
+    description: z.string()
+  })
+  .strict();
+
 export const AppServerModelSchema = z
   .object({
     id: NonEmptyStringSchema,
-    displayName: z.string().optional(),
-    providerId: z.string().optional(),
-    providerName: z.string().optional(),
-    contextWindow: NonNegativeIntSchema.optional(),
-    maxOutputTokens: NonNegativeIntSchema.optional()
+    model: NonEmptyStringSchema,
+    upgrade: z.union([NonEmptyStringSchema, z.null()]),
+    displayName: z.string(),
+    description: z.string(),
+    supportedReasoningEfforts: z.array(AppServerModelReasoningEffortSchema),
+    defaultReasoningEffort: NonEmptyStringSchema,
+    inputModalities: z.array(NonEmptyStringSchema),
+    supportsPersonality: z.boolean(),
+    isDefault: z.boolean()
   })
   .strict();
 
 export const AppServerListModelsResponseSchema = z
   .object({
-    data: z.array(AppServerModelSchema)
+    data: z.array(AppServerModelSchema),
+    nextCursor: z.union([z.string(), z.null()])
   })
   .strict();
 

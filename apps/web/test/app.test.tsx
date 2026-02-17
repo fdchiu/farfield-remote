@@ -66,6 +66,23 @@ vi.stubGlobal(
       } as Response;
     }
 
+    if (url.includes("/api/models")) {
+      return {
+        ok: true,
+        json: async () => ({
+          ok: true,
+          data: [
+            {
+              id: "gpt-5.3-codex",
+              displayName: "GPT-5.3 Codex",
+              providerId: "openai",
+              providerName: "OpenAI"
+            }
+          ]
+        })
+      } as Response;
+    }
+
     if (url.includes("/api/debug/trace/status")) {
       return {
         ok: true,

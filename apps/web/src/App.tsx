@@ -9,6 +9,7 @@ import {
   getTraceStatus,
   interruptThread,
   listCollaborationModes,
+  listModels,
   listDebugHistory,
   listThreads,
   markTrace,
@@ -36,6 +37,7 @@ import { Textarea } from "@/components/ui/textarea";
 type Health = Awaited<ReturnType<typeof getHealth>>;
 type ThreadsResponse = Awaited<ReturnType<typeof listThreads>>;
 type ModesResponse = Awaited<ReturnType<typeof listCollaborationModes>>;
+type ModelsResponse = Awaited<ReturnType<typeof listModels>>;
 type LiveStateResponse = Awaited<ReturnType<typeof getLiveState>>;
 type StreamEventsResponse = Awaited<ReturnType<typeof getStreamEvents>>;
 type TraceStatus = Awaited<ReturnType<typeof getTraceStatus>>;
@@ -107,20 +109,11 @@ function getItemText(item: ConversationState["turns"][number]["items"][number]):
   return JSON.stringify(item, null, 2);
 }
 
-function modeToCollaborationMode(mode: ModesResponse["data"][number]) {
-  return {
-    mode: mode.mode,
-    settings: {
-      model: mode.model,
-      reasoning_effort: mode.reasoning_effort,
-      developer_instructions: mode.developer_instructions
-    }
-  };
-}
-
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+const DEFAULT_EFFORT_OPTIONS = ["minimal", "low", "medium", "high", "xhigh"] as const;
 
 export function App(): React.JSX.Element {
   const [error, setError] = useState("");
@@ -131,9 +124,12 @@ export function App(): React.JSX.Element {
   const [liveState, setLiveState] = useState<LiveStateResponse | null>(null);
   const [streamEvents, setStreamEvents] = useState<StreamEventsResponse["events"]>([]);
   const [modes, setModes] = useState<ModesResponse["data"]>([]);
+  const [models, setModels] = useState<ModelsResponse["data"]>([]);
 
   const [messageDraft, setMessageDraft] = useState("");
   const [selectedModeKey, setSelectedModeKey] = useState("");
+  const [selectedModelId, setSelectedModelId] = useState("");
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState("");
   const [isBusy, setIsBusy] = useState(false);
 
   const [traceStatus, setTraceStatus] = useState<TraceStatus | null>(null);
@@ -175,11 +171,55 @@ export function App(): React.JSX.Element {
     return modes.find((mode) => mode.mode === selectedModeKey) ?? null;
   }, [modes, selectedModeKey]);
 
+  const effortOptions = useMemo(() => {
+    const values = new Set<string>(DEFAULT_EFFORT_OPTIONS);
+
+    for (const mode of modes) {
+      if (mode.reasoning_effort) {
+        values.add(mode.reasoning_effort);
+      }
+    }
+
+    const latestEffort = liveState?.conversationState?.latestReasoningEffort;
+    if (latestEffort) {
+      values.add(latestEffort);
+    }
+
+    if (selectedReasoningEffort) {
+      values.add(selectedReasoningEffort);
+    }
+
+    return Array.from(values);
+  }, [liveState?.conversationState?.latestReasoningEffort, modes, selectedReasoningEffort]);
+
+  const modelOptions = useMemo(() => {
+    const map = new Map<string, string>();
+
+    for (const model of models) {
+      const label = model.displayName && model.displayName !== model.id
+        ? `${model.displayName} (${model.id})`
+        : model.displayName || model.id;
+      map.set(model.id, label);
+    }
+
+    const latestModel = liveState?.conversationState?.latestModel;
+    if (latestModel && !map.has(latestModel)) {
+      map.set(latestModel, latestModel);
+    }
+
+    if (selectedModelId && !map.has(selectedModelId)) {
+      map.set(selectedModelId, selectedModelId);
+    }
+
+    return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
+  }, [liveState?.conversationState?.latestModel, models, selectedModelId]);
+
   const loadCoreData = useCallback(async () => {
-    const [nextHealth, nextThreads, nextModes, nextTrace, nextHistory] = await Promise.all([
+    const [nextHealth, nextThreads, nextModes, nextModels, nextTrace, nextHistory] = await Promise.all([
       getHealth(),
       listThreads({ limit: 80, archived: false, all: true, maxPages: 20 }),
       listCollaborationModes(),
+      listModels(),
       getTraceStatus(),
       listDebugHistory(120)
     ]);
@@ -187,6 +227,7 @@ export function App(): React.JSX.Element {
     setHealth(nextHealth);
     setThreads(nextThreads.data);
     setModes(nextModes.data);
+    setModels(nextModels.data);
     setTraceStatus(nextTrace);
     setHistory(nextHistory.history);
 
@@ -334,6 +375,25 @@ export function App(): React.JSX.Element {
     });
   }, [activeRequest]);
 
+  useEffect(() => {
+    const conversationState = liveState?.conversationState;
+    if (!conversationState) {
+      return;
+    }
+
+    const latestMode = conversationState.latestCollaborationMode;
+    if (latestMode?.mode) {
+      setSelectedModeKey(latestMode.mode);
+    }
+
+    const nextModel = latestMode?.settings.model ?? conversationState.latestModel ?? "";
+    const nextReasoningEffort =
+      latestMode?.settings.reasoning_effort ?? conversationState.latestReasoningEffort ?? "";
+
+    setSelectedModelId(nextModel);
+    setSelectedReasoningEffort(nextReasoningEffort);
+  }, [liveState]);
+
   const submitMessage = useCallback(async () => {
     if (!selectedThreadId || !messageDraft.trim()) {
       return;
@@ -369,7 +429,14 @@ export function App(): React.JSX.Element {
       await setCollaborationMode({
         threadId: selectedThreadId,
         ...ownerOptions,
-        collaborationMode: modeToCollaborationMode(selectedMode)
+        collaborationMode: {
+          mode: selectedMode.mode,
+          settings: {
+            model: selectedModelId || null,
+            reasoning_effort: selectedReasoningEffort || null,
+            developer_instructions: selectedMode.developer_instructions
+          }
+        }
       });
       await refreshAll();
     } catch (nextError) {
@@ -625,6 +692,36 @@ export function App(): React.JSX.Element {
                               {modes.map((mode) => (
                                 <option key={mode.mode} value={mode.mode}>
                                   {mode.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="min-w-[220px] flex-1">
+                            <div className="mb-1 text-xs text-muted-foreground">Model</div>
+                            <select
+                              className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm"
+                              value={selectedModelId}
+                              onChange={(event) => setSelectedModelId(event.target.value)}
+                            >
+                              <option value="">Use app default</option>
+                              {modelOptions.map((model) => (
+                                <option key={model.id} value={model.id}>
+                                  {model.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="min-w-[180px] flex-1">
+                            <div className="mb-1 text-xs text-muted-foreground">Reasoning effort</div>
+                            <select
+                              className="h-9 w-full rounded-md border border-border bg-card px-3 text-sm"
+                              value={selectedReasoningEffort}
+                              onChange={(event) => setSelectedReasoningEffort(event.target.value)}
+                            >
+                              <option value="">Use app default</option>
+                              {effortOptions.map((effort) => (
+                                <option key={effort} value={effort}>
+                                  {effort}
                                 </option>
                               ))}
                             </select>

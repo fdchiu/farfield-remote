@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseAppServerReadThreadResponse,
+  parseAppServerListModelsResponse,
   parseAppServerCollaborationModeListResponse,
   parseIpcFrame,
   parseThreadConversationState,
@@ -197,6 +198,37 @@ describe("codex-protocol schemas", () => {
     });
 
     expect(parsed.data[0]?.mode).toBe("plan");
+  });
+
+  it("parses app-server model/list response with modern model shape", () => {
+    const parsed = parseAppServerListModelsResponse({
+      data: [
+        {
+          id: "gpt-5.3-codex",
+          model: "gpt-5.3-codex",
+          upgrade: null,
+          displayName: "GPT-5.3 Codex",
+          description: "Latest frontier agentic coding model.",
+          supportedReasoningEfforts: [
+            {
+              reasoningEffort: "medium",
+              description: "Balanced"
+            },
+            {
+              reasoningEffort: "xhigh",
+              description: "Deep reasoning"
+            }
+          ],
+          defaultReasoningEffort: "xhigh",
+          inputModalities: ["text", "image"],
+          supportsPersonality: true,
+          isDefault: true
+        }
+      ],
+      nextCursor: null
+    });
+
+    expect(parsed.data[0]?.id).toBe("gpt-5.3-codex");
   });
 
   it("parses app-server thread/read response with subset validation", () => {

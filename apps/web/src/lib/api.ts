@@ -1,5 +1,6 @@
 import {
   AppServerCollaborationModeListResponseSchema,
+  AppServerListModelsResponseSchema,
   AppServerListThreadsResponseSchema,
   AppServerReadThreadResponseSchema,
   type CollaborationMode,
@@ -151,6 +152,11 @@ export async function listCollaborationModes(): Promise<
 > {
   const data = await request("/api/collaboration-modes");
   return AppServerCollaborationModeListResponseSchema.parse(stripOk(data));
+}
+
+export async function listModels(): Promise<z.infer<typeof AppServerListModelsResponseSchema>> {
+  const data = await request("/api/models?limit=200");
+  return AppServerListModelsResponseSchema.parse(stripOk(data));
 }
 
 export async function getLiveState(threadId: string): Promise<z.infer<typeof LiveStateResponseSchema>> {
