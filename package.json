@@ -1,15 +1,18 @@
 {
-  "name": "codex-companion",
-  "version": "0.1.0",
+  "name": "codex-monitor-workspace",
   "private": true,
-  "description": "Local web dashboard for Codex threads, turns, and advanced IPC controls",
+  "packageManager": "pnpm@10.29.3",
   "scripts": {
-    "build:ui": "node scripts/build-ui.mjs",
-    "start": "npm run build:ui && node server.js"
+    "dev": "pnpm --parallel --filter @codex-monitor/server --filter @codex-monitor/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
   },
-  "dependencies": {
-    "esbuild": "^0.27.3",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   }
 }

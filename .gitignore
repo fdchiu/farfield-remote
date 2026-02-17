@@ -1,2 +1,18 @@
 node_modules
+.pnpm-store
 
+# Build output
+dist
+coverage
+*.tsbuildinfo
+
+# Local traces and extracted desktop artifacts
+traces/
+index-DEdUduNg.js
+main-SuCoSan9.js
+main.js
+preload.js
+worker.js
+
+# Runtime logs
+*.log

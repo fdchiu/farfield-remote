@@ -5,15 +5,15 @@ Only mark items done when they are fully complete and verified.
 
 ## Stage 1: Workspace and Tooling
 
-- [ ] Switch to `pnpm` workspaces.
-- [ ] Define monorepo structure:
-  - [ ] `apps/server`
-  - [ ] `apps/web`
-  - [ ] `packages/codex-protocol`
-  - [ ] `packages/codex-api`
-- [ ] Add strict shared TypeScript config.
-- [ ] Add root scripts for build, test, lint, and dev.
-- [ ] Update ignore rules to keep private traces and extracted desktop files out of git.
+- [x] Switch to `pnpm` workspaces.
+- [x] Define monorepo structure:
+  - [x] `apps/server`
+  - [x] `apps/web`
+  - [x] `packages/codex-protocol`
+  - [x] `packages/codex-api`
+- [x] Add strict shared TypeScript config.
+- [x] Add root scripts for build, test, lint, and dev.
+- [x] Update ignore rules to keep private traces and extracted desktop files out of git.
 
 ## Stage 2: Protocol Package (`packages/codex-protocol`)
 
@@ -98,4 +98,3 @@ Only mark items done when they are fully complete and verified.
 - [ ] Remove legacy files no longer used.
 - [ ] Confirm git status only includes intentional files.
 - [ ] Final pass on naming consistency and code comments.
-
