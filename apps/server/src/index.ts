@@ -16,6 +16,7 @@ import {
 import {
   type CollaborationMode,
   type IpcFrame,
+  type ThreadConversationState,
   parseThreadConversationState,
   parseThreadStreamStateChangedBroadcast,
   parseUserInputResponsePayload
@@ -404,14 +405,22 @@ function getThreadLiveState(threadId: string): {
 
 async function resolveTurnStartTemplate(
   threadId: string
-): Promise<ReturnType<typeof findLatestTurnParamsTemplate>> {
+): Promise<{
+  turnStartTemplate: ReturnType<typeof findLatestTurnParamsTemplate>;
+  conversationState: ThreadConversationState;
+  source: "live-state" | "thread/read";
+}> {
   const reasons: string[] = [];
   const live = getThreadLiveState(threadId);
 
   if (live.conversationState) {
     try {
       const conversationState = parseThreadConversationState(live.conversationState);
-      return findLatestTurnParamsTemplate(conversationState);
+      return {
+        turnStartTemplate: findLatestTurnParamsTemplate(conversationState),
+        conversationState,
+        source: "live-state"
+      };
     } catch (error) {
       reasons.push(`live-state: ${toErrorMessage(error)}`);
     }
@@ -422,7 +431,11 @@ async function resolveTurnStartTemplate(
   try {
     const threadResult = await runAppServerCall(() => appClient.readThread(threadId, true));
     const conversationState = parseThreadConversationState(threadResult.thread);
-    return findLatestTurnParamsTemplate(conversationState);
+    return {
+      turnStartTemplate: findLatestTurnParamsTemplate(conversationState),
+      conversationState,
+      source: "thread/read"
+    };
   } catch (error) {
     reasons.push(`thread/read: ${toErrorMessage(error)}`);
   }
@@ -742,9 +755,9 @@ const server = http.createServer(async (req, res) => {
           isSteering: typeof body.isSteering === "boolean" ? body.isSteering : false
         });
 
-        let turnStartTemplate: ReturnType<typeof findLatestTurnParamsTemplate>;
+        let resolvedTurnContext: Awaited<ReturnType<typeof resolveTurnStartTemplate>>;
         try {
-          turnStartTemplate = await resolveTurnStartTemplate(threadId);
+          resolvedTurnContext = await resolveTurnStartTemplate(threadId);
         } catch (error) {
           const message = pushActionError("messages", error, {
             threadId,
@@ -755,11 +768,41 @@ const server = http.createServer(async (req, res) => {
         }
 
         try {
+          const overrides: {
+            model?: string | null;
+            effort?: string | null;
+            collaborationMode?: CollaborationMode | null;
+          } = {};
+
+          if (Object.prototype.hasOwnProperty.call(resolvedTurnContext.conversationState, "latestModel")) {
+            overrides.model = resolvedTurnContext.conversationState.latestModel ?? null;
+          }
+
+          if (
+            Object.prototype.hasOwnProperty.call(
+              resolvedTurnContext.conversationState,
+              "latestReasoningEffort"
+            )
+          ) {
+            overrides.effort = resolvedTurnContext.conversationState.latestReasoningEffort ?? null;
+          }
+
+          if (
+            Object.prototype.hasOwnProperty.call(
+              resolvedTurnContext.conversationState,
+              "latestCollaborationMode"
+            )
+          ) {
+            overrides.collaborationMode =
+              resolvedTurnContext.conversationState.latestCollaborationMode ?? null;
+          }
+
           await service.sendMessage({
             threadId,
             ownerClientId,
             text: body.text,
-            turnStartTemplate,
+            turnStartTemplate: resolvedTurnContext.turnStartTemplate,
+            ...overrides,
             ...(body.cwd ? { cwd: body.cwd } : {}),
             ...(typeof body.isSteering === "boolean" ? { isSteering: body.isSteering } : {})
           });

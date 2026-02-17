@@ -49,6 +49,47 @@ describe("CodexMonitorService", () => {
     );
   });
 
+  it("overrides template mode and model when provided", async () => {
+    const ipcClient = {
+      sendRequestAndWait: vi.fn().mockResolvedValue({ type: "response", requestId: 1 })
+    };
+
+    const service = new CodexMonitorService(ipcClient as never);
+
+    await service.sendMessage({
+      threadId: "thread-1",
+      ownerClientId: "client-1",
+      text: "new message",
+      turnStartTemplate: createThread().turns[0]?.params as NonNullable<
+        ThreadConversationState["turns"][number]["params"]
+      >,
+      model: "gpt-5.3-codex",
+      effort: "high",
+      collaborationMode: {
+        mode: "plan",
+        settings: {
+          model: "gpt-5.3-codex",
+          reasoning_effort: "high",
+          developer_instructions: "plan"
+        }
+      }
+    });
+
+    expect(ipcClient.sendRequestAndWait).toHaveBeenCalledWith(
+      "thread-follower-start-turn",
+      expect.objectContaining({
+        turnStartParams: expect.objectContaining({
+          model: "gpt-5.3-codex",
+          effort: "high",
+          collaborationMode: expect.objectContaining({
+            mode: "plan"
+          })
+        })
+      }),
+      expect.any(Object)
+    );
+  });
+
   it("submits user input with validated payload", async () => {
     const service = new CodexMonitorService({ sendRequestAndWait: vi.fn().mockResolvedValue({}) } as never);
 

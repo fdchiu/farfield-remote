@@ -13,6 +13,9 @@ export interface SendMessageInput {
   cwd?: string;
   isSteering?: boolean;
   turnStartTemplate: TurnStartParams;
+  model?: string | null;
+  effort?: string | null;
+  collaborationMode?: CollaborationMode | null;
 }
 
 export interface SetModeInput {
@@ -55,6 +58,18 @@ export class CodexMonitorService {
       cwd: input.cwd ?? template.cwd,
       attachments: Array.isArray(template.attachments) ? template.attachments : []
     };
+
+    if (Object.prototype.hasOwnProperty.call(input, "model")) {
+      turnStartParams.model = input.model ?? null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(input, "effort")) {
+      turnStartParams.effort = input.effort ?? null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(input, "collaborationMode")) {
+      turnStartParams.collaborationMode = input.collaborationMode ?? null;
+    }
 
     await this.ipcClient.sendRequestAndWait(
       "thread-follower-start-turn",

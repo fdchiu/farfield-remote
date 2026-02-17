@@ -444,7 +444,14 @@ export function App(): React.JSX.Element {
     } finally {
       setIsBusy(false);
     }
-  }, [liveState?.ownerClientId, refreshAll, selectedMode, selectedThreadId]);
+  }, [
+    liveState?.ownerClientId,
+    refreshAll,
+    selectedMode,
+    selectedModelId,
+    selectedReasoningEffort,
+    selectedThreadId
+  ]);
 
   const submitPendingRequest = useCallback(async () => {
     if (!selectedThreadId || !activeRequest) {
