@@ -351,6 +351,7 @@ export function App(): React.JSX.Element {
   const refreshTimerRef = useRef<number | null>(null);
   const coreRefreshIntervalRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const chatContentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   /* Derived */
@@ -550,6 +551,21 @@ export function App(): React.JSX.Element {
       scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
     }
   }, [activeTab, conversationItemCount, isChatAtBottom]);
+
+  // Keep bottom pinned when expanded/collapsed blocks change chat height.
+  useEffect(() => {
+    if (activeTab !== "chat" || !scrollRef.current || !chatContentRef.current) return;
+    const scroller = scrollRef.current;
+    const content = chatContentRef.current;
+    const observer = new ResizeObserver(() => {
+      if (!isChatAtBottom) return;
+      scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+    });
+    observer.observe(content);
+    return () => {
+      observer.disconnect();
+    };
+  }, [activeTab, isChatAtBottom, selectedThreadId]);
 
   // New thread selection starts at the bottom.
   useEffect(() => {
@@ -896,7 +912,7 @@ export function App(): React.JSX.Element {
 
             {/* Conversation */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto">
-              <div className="max-w-3xl mx-auto px-4 py-8">
+              <div ref={chatContentRef} className="max-w-3xl mx-auto px-4 py-8">
                 {turns.length === 0 ? (
                   <div className="text-center py-20 text-sm text-muted-foreground">
                     {selectedThreadId ? "No messages yet" : "Select a thread from the sidebar"}
