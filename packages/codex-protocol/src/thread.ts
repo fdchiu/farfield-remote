@@ -30,10 +30,19 @@ export const InputTextPartSchema = z
   })
   .strict();
 
+export const InputImagePartSchema = z
+  .object({
+    type: z.literal("image"),
+    url: z.string()
+  })
+  .passthrough();
+
+export const InputPartSchema = z.union([InputTextPartSchema, InputImagePartSchema]);
+
 export const TurnStartParamsSchema = z
   .object({
     threadId: NonEmptyStringSchema,
-    input: z.array(InputTextPartSchema),
+    input: z.array(InputPartSchema),
     cwd: NonEmptyStringSchema.optional(),
     model: NullableNonEmptyStringSchema.optional(),
     effort: NullableNonEmptyStringSchema.optional(),
@@ -55,11 +64,23 @@ export const UserMessageContentPartSchema = z
   })
   .strict();
 
+export const UserMessageImageContentPartSchema = z
+  .object({
+    type: z.literal("image"),
+    url: z.string()
+  })
+  .passthrough();
+
+export const UserMessagePartSchema = z.union([
+  UserMessageContentPartSchema,
+  UserMessageImageContentPartSchema
+]);
+
 export const UserMessageItemSchema = z
   .object({
     id: NonEmptyStringSchema,
     type: z.literal("userMessage"),
-    content: z.array(UserMessageContentPartSchema)
+    content: z.array(UserMessagePartSchema)
   })
   .strict();
 
@@ -133,13 +154,65 @@ export const CommandExecutionItemSchema = z
   })
   .strict();
 
+export const FileChangeKindSchema = z
+  .object({
+    type: NonEmptyStringSchema,
+    move_path: z.union([z.string(), z.null()]).optional()
+  })
+  .strict();
+
+export const FileChangeEntrySchema = z
+  .object({
+    path: z.string(),
+    kind: FileChangeKindSchema,
+    diff: z.string().optional()
+  })
+  .strict();
+
+export const FileChangeItemSchema = z
+  .object({
+    type: z.literal("fileChange"),
+    id: NonEmptyStringSchema,
+    changes: z.array(FileChangeEntrySchema),
+    status: NonEmptyStringSchema
+  })
+  .strict();
+
+export const ContextCompactionItemSchema = z
+  .object({
+    type: z.literal("contextCompaction"),
+    id: NonEmptyStringSchema,
+    completed: z.boolean()
+  })
+  .strict();
+
+export const WebSearchActionSchema = z
+  .object({
+    type: NonEmptyStringSchema,
+    query: z.string().optional(),
+    queries: z.array(z.string()).optional()
+  })
+  .strict();
+
+export const WebSearchItemSchema = z
+  .object({
+    type: z.literal("webSearch"),
+    id: NonEmptyStringSchema,
+    query: z.string(),
+    action: WebSearchActionSchema
+  })
+  .strict();
+
 export const TurnItemSchema = z.discriminatedUnion("type", [
   UserMessageItemSchema,
   AgentMessageItemSchema,
   ReasoningItemSchema,
   PlanItemSchema,
   UserInputResponseItemSchema,
-  CommandExecutionItemSchema
+  CommandExecutionItemSchema,
+  FileChangeItemSchema,
+  ContextCompactionItemSchema,
+  WebSearchItemSchema
 ]);
 
 export const UserInputOptionSchema = z

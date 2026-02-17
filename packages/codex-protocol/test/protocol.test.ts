@@ -115,6 +115,36 @@ describe("codex-protocol schemas", () => {
     expect(parsed.turns[0]?.items[0]?.type).toBe("userInputResponse");
   });
 
+  it("parses thread conversation state with mixed text and image user content", () => {
+    const parsed = parseThreadConversationState({
+      id: "thread-123",
+      turns: [
+        {
+          status: "completed",
+          items: [
+            {
+              id: "item-1",
+              type: "userMessage",
+              content: [
+                {
+                  type: "text",
+                  text: "describe this image"
+                },
+                {
+                  type: "image",
+                  url: "data:image/png;base64,AAAA"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      requests: []
+    });
+
+    expect(parsed.turns[0]?.items[0]?.type).toBe("userMessage");
+  });
+
   it("rejects thread conversation state with unknown item types", () => {
     expect(() =>
       parseThreadConversationState({
@@ -171,6 +201,69 @@ describe("codex-protocol schemas", () => {
     });
 
     expect(parsed.turns[0]?.items[0]?.type).toBe("commandExecution");
+  });
+
+  it("parses thread conversation state with fileChange item", () => {
+    const parsed = parseThreadConversationState({
+      id: "thread-123",
+      turns: [
+        {
+          status: "completed",
+          items: [
+            {
+              id: "item-file",
+              type: "fileChange",
+              status: "completed",
+              changes: [
+                {
+                  path: "/tmp/file.txt",
+                  kind: {
+                    type: "update",
+                    move_path: null
+                  },
+                  diff: "@@ -1 +1 @@\n-old\n+new\n"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      requests: []
+    });
+
+    expect(parsed.turns[0]?.items[0]?.type).toBe("fileChange");
+  });
+
+  it("parses thread conversation state with contextCompaction and webSearch items", () => {
+    const parsed = parseThreadConversationState({
+      id: "thread-123",
+      turns: [
+        {
+          status: "completed",
+          items: [
+            {
+              id: "item-compact",
+              type: "contextCompaction",
+              completed: true
+            },
+            {
+              id: "item-web",
+              type: "webSearch",
+              query: "example query",
+              action: {
+                type: "search",
+                query: "example query",
+                queries: ["example query"]
+              }
+            }
+          ]
+        }
+      ],
+      requests: []
+    });
+
+    expect(parsed.turns[0]?.items[0]?.type).toBe("contextCompaction");
+    expect(parsed.turns[0]?.items[1]?.type).toBe("webSearch");
   });
 
   it("parses generic ipc request frames", () => {

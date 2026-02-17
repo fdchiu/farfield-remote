@@ -31,6 +31,7 @@ import {
   TraceMarkBodySchema,
   TraceStartBodySchema
 } from "./http-schemas.js";
+import { logger } from "./logger.js";
 import { resolveOwnerClientId } from "./thread-owner.js";
 
 const HOST = process.env["HOST"] ?? "127.0.0.1";
@@ -220,16 +221,47 @@ function pushHistory(
 }
 
 function pushSystem(message: string, details: Record<string, unknown> = {}): void {
+  logger.info({ message, ...details }, "system-event");
   pushHistory("system", "system", { message, details });
 }
 
 type ActionStage = "attempt" | "success" | "error";
+
+function summarizeActionDetails(details: Record<string, unknown>): Record<string, unknown> {
+  const summary: Record<string, unknown> = {};
+  const keys = ["threadId", "ownerClientId", "requestId", "textLength", "isSteering"];
+
+  for (const key of keys) {
+    const value = details[key];
+    if (value !== undefined) {
+      summary[key] = value;
+    }
+  }
+
+  const modeValue = details["collaborationMode"];
+  if (modeValue && typeof modeValue === "object") {
+    const maybeMode = (modeValue as Record<string, unknown>)["mode"];
+    if (typeof maybeMode === "string") {
+      summary["mode"] = maybeMode;
+    }
+  }
+
+  return summary;
+}
 
 function pushActionEvent(
   action: string,
   stage: ActionStage,
   details: Record<string, unknown>
 ): void {
+  logger.info(
+    {
+      action,
+      stage,
+      ...summarizeActionDetails(details)
+    },
+    "action-event"
+  );
   pushHistory("app", "out", {
     type: "action",
     action,
@@ -244,6 +276,14 @@ function pushActionError(
   details: Record<string, unknown>
 ): string {
   const message = toErrorMessage(error);
+  logger.error(
+    {
+      action,
+      error: message,
+      ...summarizeActionDetails(details)
+    },
+    "action-error"
+  );
   pushActionEvent(action, "error", { ...details, error: message });
   pushSystem("Action failed", { action, ...details, error: message });
   return message;
@@ -325,6 +365,7 @@ const appClient = new AppServerClient({
   userAgent: USER_AGENT,
   cwd: DEFAULT_WORKSPACE,
   onStderr: (line) => {
+    logger.error({ line }, "app-server-stderr");
     pushHistory("app", "system", {
       type: "stderr",
       line
@@ -382,7 +423,14 @@ function getThreadLiveState(threadId: string): {
   const events = rawEvents.flatMap((event) => {
     try {
       return [parseThreadStreamStateChangedBroadcast(event)];
-    } catch {
+    } catch (error) {
+      logger.warn(
+        {
+          threadId,
+          error: toErrorMessage(error)
+        },
+        "invalid-thread-stream-event"
+      );
       return [];
     }
   });
@@ -394,8 +442,29 @@ function getThreadLiveState(threadId: string): {
     };
   }
 
-  const reduced = reduceThreadStreamEvents(events);
-  const state = reduced.get(threadId);
+  let state;
+  try {
+    const reduced = reduceThreadStreamEvents(events);
+    state = reduced.get(threadId);
+  } catch (error) {
+    logger.error(
+      {
+        threadId,
+        eventCount: events.length,
+        error: toErrorMessage(error)
+      },
+      "thread-stream-reduction-failed"
+    );
+    pushSystem("Thread stream reduction failed", {
+      threadId,
+      eventCount: events.length,
+      error: toErrorMessage(error)
+    });
+    return {
+      ownerClientId: threadOwnerById.get(threadId) ?? null,
+      conversationState: null
+    };
+  }
 
   return {
     ownerClientId: state?.ownerClientId ?? null,
@@ -422,6 +491,14 @@ async function resolveTurnStartTemplate(
         source: "live-state"
       };
     } catch (error) {
+      logger.warn(
+        {
+          threadId,
+          source: "live-state",
+          error: toErrorMessage(error)
+        },
+        "turn-template-resolution-failed"
+      );
       reasons.push(`live-state: ${toErrorMessage(error)}`);
     }
   } else {
@@ -437,6 +514,14 @@ async function resolveTurnStartTemplate(
       source: "thread/read"
     };
   } catch (error) {
+    logger.warn(
+      {
+        threadId,
+        source: "thread/read",
+        error: toErrorMessage(error)
+      },
+      "turn-template-resolution-failed"
+    );
     reasons.push(`thread/read: ${toErrorMessage(error)}`);
   }
 
@@ -559,6 +644,14 @@ ipcClient.onConnectionState((state) => {
 
 ipcClient.onFrame((frame) => {
   const threadId = extractThreadId(frame);
+  logger.debug(
+    {
+      frameType: frame.type,
+      method: frame.type === "request" || frame.type === "broadcast" ? frame.method : "response",
+      threadId
+    },
+    "ipc-frame"
+  );
 
   pushHistory("ipc", "in", frame, {
     method: frame.type === "request" || frame.type === "broadcast" ? frame.method : "response",
@@ -1219,6 +1312,14 @@ const server = http.createServer(async (req, res) => {
     jsonResponse(res, 404, { ok: false, error: "Not found" });
   } catch (error) {
     runtimeState.lastError = toErrorMessage(error);
+    logger.error(
+      {
+        method: req.method ?? "unknown",
+        url: req.url ?? "unknown",
+        error: runtimeState.lastError
+      },
+      "request-failed"
+    );
     pushSystem("Request failed", {
       error: runtimeState.lastError,
       method: req.method ?? "unknown",
@@ -1305,9 +1406,7 @@ async function start(): Promise<void> {
     socketPath: runtimeState.socketPath
   });
   broadcastRuntimeState();
-
-  // eslint-disable-next-line no-console
-  console.log(`Codex monitor server running at http://${HOST}:${PORT}`);
+  logger.info({ url: `http://${HOST}:${PORT}` }, "monitor-server-ready");
 
   void bootstrapConnections();
 }
@@ -1335,7 +1434,6 @@ process.on("SIGTERM", () => {
 void start().catch((error) => {
   const errorMessage = setRuntimeError(error);
   pushSystem("Monitor server failed to start", { error: errorMessage });
-  // eslint-disable-next-line no-console
-  console.error(`Failed to start monitor server: ${errorMessage}`);
+  logger.fatal({ error: errorMessage }, "monitor-server-failed-to-start");
   process.exit(1);
 });
