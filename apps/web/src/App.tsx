@@ -14,6 +14,7 @@ import {
   Loader2,
   Menu,
   Moon,
+  PanelLeft,
   RefreshCcw,
   Settings2,
   Sun,
@@ -339,7 +340,8 @@ export function App(): React.JSX.Element {
 
   /* UI state */
   const [activeTab, setActiveTab] = useState<"chat" | "debug">("chat");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [planOpen, setPlanOpen] = useState(false);
 
   /* Refs */
@@ -663,22 +665,26 @@ export function App(): React.JSX.Element {
 
       {/* Mobile sidebar backdrop */}
       <AnimatePresence>
-        {sidebarOpen && (
+        {mobileSidebarOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             className="md:hidden fixed inset-0 bg-black/50 z-40"
-            onClick={() => setSidebarOpen(false)}
+            onClick={() => setMobileSidebarOpen(false)}
           />
         )}
       </AnimatePresence>
 
       {/* ── Sidebar ─────────────────────────────────────────── */}
       <aside
-        className={`fixed md:relative z-50 flex flex-col w-64 h-full border-r border-sidebar-border bg-sidebar shrink-0 transition-transform duration-200 ease-in-out md:translate-x-0 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        className={`fixed md:relative z-50 flex flex-col h-full border-r border-sidebar-border bg-sidebar shrink-0 transition-transform duration-200 ease-in-out md:transition-[width,opacity] md:duration-200 md:translate-x-0 ${
+          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        } ${
+          desktopSidebarOpen
+            ? "w-64 md:w-64 md:opacity-100 md:pointer-events-auto"
+            : "w-64 md:w-0 md:opacity-0 md:pointer-events-none"
         }`}
       >
         {/* Sidebar header */}
@@ -689,7 +695,7 @@ export function App(): React.JSX.Element {
           </div>
           <Button
             type="button"
-            onClick={() => setSidebarOpen(false)}
+            onClick={() => setMobileSidebarOpen(false)}
             variant="ghost"
             size="icon"
             className="md:hidden h-7 w-7 text-muted-foreground hover:text-foreground"
@@ -711,7 +717,7 @@ export function App(): React.JSX.Element {
                 type="button"
                 onClick={() => {
                   setSelectedThreadId(thread.id);
-                  setSidebarOpen(false);
+                  setMobileSidebarOpen(false);
                 }}
                 variant="ghost"
                 className={`w-full h-auto flex flex-col items-start justify-start gap-0 rounded-none px-3 py-2.5 text-left transition-colors ${
@@ -750,9 +756,19 @@ export function App(): React.JSX.Element {
         {/* Header */}
         <header className="flex items-center justify-between px-3 h-14 border-b border-border shrink-0 gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <IconBtn onClick={() => setSidebarOpen(true)} title="Threads">
-              <Menu size={15} />
-            </IconBtn>
+            <div className="md:hidden">
+              <IconBtn onClick={() => setMobileSidebarOpen(true)} title="Threads">
+                <Menu size={15} />
+              </IconBtn>
+            </div>
+            <div className="hidden md:block">
+              <IconBtn
+                onClick={() => setDesktopSidebarOpen((open) => !open)}
+                title={desktopSidebarOpen ? "Hide sidebar" : "Show sidebar"}
+              >
+                <PanelLeft size={15} />
+              </IconBtn>
+            </div>
             <div className="min-w-0">
               <div className="text-sm font-medium truncate leading-5">
                 {selectedThread ? threadLabel(selectedThread) : "No thread selected"}
