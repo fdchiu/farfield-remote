@@ -1026,13 +1026,6 @@ export function App(): React.JSX.Element {
               <RefreshCcw size={14} className={isBusy ? "animate-spin" : ""} />
             </IconBtn>
             <IconBtn
-              onClick={() => void runInterrupt()}
-              disabled={!selectedThreadId || isBusy}
-              title="Interrupt"
-            >
-              <CirclePause size={14} />
-            </IconBtn>
-            <IconBtn
               onClick={() => setActiveTab(activeTab === "debug" ? "chat" : "debug")}
               active={activeTab === "debug"}
               title="Debug"
@@ -1206,12 +1199,28 @@ export function App(): React.JSX.Element {
                     />
                     <Button
                       type="button"
-                      onClick={() => void submitMessage()}
-                      disabled={!selectedThreadId || isBusy || !messageDraft.trim()}
+                      onClick={() => {
+                        if (isGenerating) {
+                          void runInterrupt();
+                          return;
+                        }
+                        void submitMessage();
+                      }}
+                      disabled={
+                        isGenerating
+                          ? !selectedThreadId || isBusy
+                          : !selectedThreadId || isBusy || !messageDraft.trim()
+                      }
                       size="icon"
-                      className="h-7 w-7 shrink-0 bg-foreground text-background hover:bg-foreground/80 disabled:opacity-30"
+                      className={`h-7 w-7 shrink-0 disabled:opacity-30 ${
+                        isGenerating
+                          ? "bg-destructive text-destructive-foreground hover:bg-destructive/85"
+                          : "bg-foreground text-background hover:bg-foreground/80"
+                      }`}
                     >
-                      {isBusy ? (
+                      {isGenerating ? (
+                        <CirclePause size={13} />
+                      ) : isBusy ? (
                         <Loader2 size={13} className="animate-spin" />
                       ) : (
                         <ArrowUp size={13} />
@@ -1252,7 +1261,7 @@ export function App(): React.JSX.Element {
                         <SelectValue placeholder="Model" />
                       </SelectTrigger>
                       <SelectContent position="popper">
-                        <SelectItem value={APP_DEFAULT_VALUE}>App default ({ASSUMED_APP_DEFAULT_MODEL})</SelectItem>
+                        <SelectItem value={APP_DEFAULT_VALUE}>{ASSUMED_APP_DEFAULT_MODEL}</SelectItem>
                         {modelOptions.map((option) => (
                           <SelectItem key={option.id} value={option.id}>
                             {option.label}
@@ -1271,7 +1280,7 @@ export function App(): React.JSX.Element {
                         <SelectValue placeholder="Effort" />
                       </SelectTrigger>
                       <SelectContent position="popper">
-                        <SelectItem value={APP_DEFAULT_VALUE}>App default ({ASSUMED_APP_DEFAULT_EFFORT})</SelectItem>
+                        <SelectItem value={APP_DEFAULT_VALUE}>{ASSUMED_APP_DEFAULT_EFFORT}</SelectItem>
                         {effortOptions.map((option) => (
                           <SelectItem key={option} value={option}>
                             {option}
