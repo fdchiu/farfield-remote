@@ -102,6 +102,17 @@ export const AgentMessageItemSchema = z
   })
   .passthrough();
 
+export const ErrorItemSchema = z
+  .object({
+    id: NonEmptyStringSchema,
+    type: z.literal("error"),
+    message: z.string(),
+    willRetry: z.boolean().optional(),
+    errorInfo: z.union([z.string(), z.null()]).optional(),
+    additionalDetails: z.union([JsonValueSchema, z.null()]).optional()
+  })
+  .passthrough();
+
 export const ReasoningItemSchema = z
   .object({
     id: NonEmptyStringSchema,
@@ -117,6 +128,16 @@ export const PlanItemSchema = z
     id: NonEmptyStringSchema,
     type: z.literal("plan"),
     text: z.string()
+  })
+  .passthrough();
+
+export const PlanImplementationItemSchema = z
+  .object({
+    id: NonEmptyStringSchema,
+    type: z.literal("planImplementation"),
+    turnId: NonEmptyStringSchema,
+    planContent: z.string(),
+    isCompleted: z.boolean().optional()
   })
   .passthrough();
 
@@ -227,8 +248,10 @@ export const TurnItemSchema = z.discriminatedUnion("type", [
   UserMessageItemSchema,
   SteeringUserMessageItemSchema,
   AgentMessageItemSchema,
+  ErrorItemSchema,
   ReasoningItemSchema,
   PlanItemSchema,
+  PlanImplementationItemSchema,
   UserInputResponseItemSchema,
   CommandExecutionItemSchema,
   FileChangeItemSchema,

@@ -105,6 +105,44 @@ describe("codex-protocol schemas", () => {
     expect(parsed.params.change.type).toBe("snapshot");
   });
 
+  it("parses snapshot broadcast when turn includes error item", () => {
+    const parsed = parseThreadStreamStateChangedBroadcast({
+      type: "broadcast",
+      method: "thread-stream-state-changed",
+      sourceClientId: "client-123",
+      version: 4,
+      params: {
+        conversationId: "thread-123",
+        type: "thread-stream-state-changed",
+        version: 4,
+        change: {
+          type: "snapshot",
+          conversationState: {
+            id: "thread-123",
+            turns: [
+              {
+                status: "completed",
+                items: [
+                  {
+                    id: "err-1",
+                    type: "error",
+                    message: "contextWindowExceeded",
+                    willRetry: false,
+                    errorInfo: "contextWindowExceeded",
+                    additionalDetails: null
+                  }
+                ]
+              }
+            ],
+            requests: []
+          }
+        }
+      }
+    });
+
+    expect(parsed.params.change.type).toBe("snapshot");
+  });
+
   it("rejects invalid patch value for remove operation", () => {
     expect(() =>
       parseThreadStreamStateChangedBroadcast({
@@ -240,6 +278,29 @@ describe("codex-protocol schemas", () => {
     });
 
     expect(parsed.turns[0]?.items[0]?.type).toBe("steeringUserMessage");
+  });
+
+  it("parses planImplementation item", () => {
+    const parsed = parseThreadConversationState({
+      id: "thread-123",
+      turns: [
+        {
+          status: "completed",
+          items: [
+            {
+              id: "implement-plan:turn-1",
+              type: "planImplementation",
+              turnId: "turn-1",
+              planContent: "# Plan\n\nDo the thing",
+              isCompleted: true
+            }
+          ]
+        }
+      ],
+      requests: []
+    });
+
+    expect(parsed.turns[0]?.items[0]?.type).toBe("planImplementation");
   });
 
   it("rejects thread conversation state with unknown item types", () => {

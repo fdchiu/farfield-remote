@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import {
   AppServerClient,
   AppServerRpcError,
@@ -11,6 +13,7 @@ import {
 import {
   parseThreadStreamStateChangedBroadcast,
   parseUserInputResponsePayload,
+  ProtocolValidationError,
   type IpcFrame,
   type IpcRequestFrame,
   type IpcResponseFrame
@@ -59,6 +62,8 @@ export interface CodexAgentOptions {
 }
 
 const ANSI_ESCAPE_REGEX = /\u001B\[[0-?]*[ -/]*[@-~]/g;
+const INVALID_STREAM_EVENTS_LOG_PATH = process.env["FARFIELD_INVALID_STREAM_LOG_PATH"] ??
+  path.resolve(process.cwd(), "invalid-thread-stream-events.jsonl");
 
 export class CodexAgentAdapter implements AgentAdapter {
   public readonly id = "codex";
@@ -420,6 +425,22 @@ export class CodexAgentAdapter implements AgentAdapter {
         invalidEventCount += 1;
         if (!firstInvalidEventError) {
           firstInvalidEventError = toErrorMessage(error);
+          logger.warn(
+            {
+              threadId,
+              error: firstInvalidEventError,
+              ...(error instanceof ProtocolValidationError ? { issues: error.issues } : {}),
+              rawPayload: event
+            },
+            "codex-invalid-thread-stream-event-detail"
+          );
+          writeInvalidStreamEventDetail({
+            threadId,
+            error: firstInvalidEventError,
+            ...(error instanceof ProtocolValidationError ? { issues: error.issues } : {}),
+            rawPayload: event,
+            loggedAt: new Date().toISOString()
+          });
         }
       }
     }
@@ -683,6 +704,24 @@ function isKnownBenignAppServerStderr(line: string): boolean {
     line.includes("codex_core::rollout::list") &&
     line.includes("state db missing rollout path for thread")
   );
+}
+
+function writeInvalidStreamEventDetail(detail: Record<string, unknown>): void {
+  try {
+    fs.appendFileSync(
+      INVALID_STREAM_EVENTS_LOG_PATH,
+      JSON.stringify(detail) + "\n",
+      { encoding: "utf8" }
+    );
+  } catch (error) {
+    logger.warn(
+      {
+        path: INVALID_STREAM_EVENTS_LOG_PATH,
+        error: toErrorMessage(error)
+      },
+      "codex-invalid-thread-stream-event-detail-write-failed"
+    );
+  }
 }
 
 function extractThreadId(frame: IpcFrame): string | null {
