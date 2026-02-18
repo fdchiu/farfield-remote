@@ -22,7 +22,7 @@ import {
   Sun,
   X
 } from "lucide-react";
-import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   getHealth,
   getHistoryEntry,
@@ -111,6 +111,75 @@ const ASSUMED_APP_DEFAULT_EFFORT = "medium";
 
 function isPlanModeOption(mode: { mode: string; name: string }): boolean {
   return mode.mode.toLowerCase().includes("plan") || mode.name.toLowerCase().includes("plan");
+}
+
+function getConversationStateUpdatedAt(
+  state: NonNullable<ReadThreadResponse["thread"]> | null | undefined
+): number {
+  if (!state || typeof state.updatedAt !== "number") {
+    return Number.NEGATIVE_INFINITY;
+  }
+  return state.updatedAt;
+}
+
+function buildModeSignature(modeKey: string, modelId: string, effort: string): string {
+  return `${modeKey}|${modelId}|${effort}`;
+}
+
+function normalizeNullableModeValue(value: string | null | undefined): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : "";
+}
+
+function normalizeModeSettingValue(
+  value: string | null | undefined,
+  assumedDefault: string
+): string {
+  const normalized = normalizeNullableModeValue(value);
+  if (!normalized) {
+    return "";
+  }
+  if (normalized === assumedDefault) {
+    return "";
+  }
+  return normalized;
+}
+
+function readModeSelectionFromConversationState(state: NonNullable<ReadThreadResponse["thread"]> | null): {
+  modeKey: string;
+  modelId: string;
+  reasoningEffort: string;
+} {
+  if (!state) {
+    return {
+      modeKey: "",
+      modelId: "",
+      reasoningEffort: ""
+    };
+  }
+
+  if (state.latestCollaborationMode) {
+    return {
+      modeKey: state.latestCollaborationMode.mode,
+      modelId: normalizeModeSettingValue(
+        state.latestCollaborationMode.settings.model,
+        ASSUMED_APP_DEFAULT_MODEL
+      ),
+      reasoningEffort: normalizeModeSettingValue(
+        state.latestCollaborationMode.settings.reasoning_effort,
+        ASSUMED_APP_DEFAULT_EFFORT
+      )
+    };
+  }
+
+  return {
+    modeKey: "",
+    modelId: normalizeModeSettingValue(state.latestModel, ASSUMED_APP_DEFAULT_MODEL),
+    reasoningEffort: normalizeModeSettingValue(state.latestReasoningEffort, ASSUMED_APP_DEFAULT_EFFORT)
+  };
 }
 
 function parseUiStateFromPath(pathname: string): { threadId: string | null; tab: "chat" | "debug" } {
@@ -391,14 +460,21 @@ export function App(): React.JSX.Element {
   const chatContentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastAppliedModeSignatureRef = useRef("");
-  const modeSyncRequestIdRef = useRef(0);
 
   /* Derived */
   const selectedThread = useMemo(
     () => threads.find((t) => t.id === selectedThreadId) ?? null,
     [threads, selectedThreadId]
   );
-  const conversationState = liveState?.conversationState ?? readThreadState?.thread ?? null;
+  const conversationState = useMemo(() => {
+    const liveConversationState = liveState?.conversationState ?? null;
+    const readConversationState = readThreadState?.thread ?? null;
+    if (!liveConversationState) return readConversationState;
+    if (!readConversationState) return liveConversationState;
+    const liveUpdatedAt = getConversationStateUpdatedAt(liveConversationState);
+    const readUpdatedAt = getConversationStateUpdatedAt(readConversationState);
+    return liveUpdatedAt > readUpdatedAt ? liveConversationState : readConversationState;
+  }, [liveState?.conversationState, readThreadState?.thread]);
 
   const pendingRequests = useMemo(() => {
     if (!conversationState) return [] as PendingRequest[];
@@ -411,10 +487,6 @@ export function App(): React.JSX.Element {
     return pendingRequests.find((r) => r.id === selectedRequestId) ?? pendingRequests[0];
   }, [pendingRequests, selectedRequestId]);
 
-  const selectedMode = useMemo(
-    () => modes.find((m) => m.mode === selectedModeKey) ?? null,
-    [modes, selectedModeKey]
-  );
   const planModeOption = useMemo(
     () => modes.find((mode) => isPlanModeOption(mode)) ?? null,
     [modes]
@@ -492,6 +564,7 @@ export function App(): React.JSX.Element {
     health?.state.appReady === false ||
     health?.state.ipcConnected === false ||
     health?.state.ipcInitialized === false;
+  const allowEntryLayoutAnimations = !suppressEntryAnimations;
 
   /* Data loading */
   const loadCoreData = useCallback(async () => {
@@ -630,50 +703,48 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const cs = conversationState;
     if (!cs) return;
-    const lm = cs.latestCollaborationMode;
-    const explicitModeKey = lm?.mode;
-    const explicitModelId = lm?.settings.model;
-    const explicitReasoningEffort = lm?.settings.reasoning_effort;
+    const remoteSelection = readModeSelectionFromConversationState(cs);
+    const remoteModeKey = remoteSelection.modeKey || selectedModeKey || defaultModeOption?.mode || "";
+    const remoteSignature = buildModeSignature(
+      remoteModeKey,
+      remoteSelection.modelId,
+      remoteSelection.reasoningEffort
+    );
 
     if (!hasHydratedModeFromLiveState) {
-      const nextModeKey = explicitModeKey ?? selectedModeKey;
-      const nextModelId = explicitModelId ?? cs.latestModel ?? "";
-      const nextReasoningEffort = explicitReasoningEffort ?? cs.latestReasoningEffort ?? "";
-      if (nextModeKey) setSelectedModeKey(nextModeKey);
-      setSelectedModelId(nextModelId);
-      setSelectedReasoningEffort(nextReasoningEffort);
-      lastAppliedModeSignatureRef.current = `${nextModeKey}|${nextModelId}|${nextReasoningEffort}`;
+      if (remoteModeKey) setSelectedModeKey(remoteModeKey);
+      setSelectedModelId(remoteSelection.modelId);
+      setSelectedReasoningEffort(remoteSelection.reasoningEffort);
+      lastAppliedModeSignatureRef.current = remoteSignature;
       setHasHydratedModeFromLiveState(true);
       return;
     }
 
-    let didApplyExplicitSync = false;
-    let resolvedModeKey = selectedModeKey;
-    let resolvedModelId = selectedModelId;
-    let resolvedReasoningEffort = selectedReasoningEffort;
-
-    if (explicitModeKey) {
-      setSelectedModeKey(explicitModeKey);
-      resolvedModeKey = explicitModeKey;
-      didApplyExplicitSync = true;
-    }
-    if (explicitModelId != null) {
-      setSelectedModelId(explicitModelId);
-      resolvedModelId = explicitModelId;
-      didApplyExplicitSync = true;
-    }
-    if (explicitReasoningEffort != null) {
-      setSelectedReasoningEffort(explicitReasoningEffort);
-      resolvedReasoningEffort = explicitReasoningEffort;
-      didApplyExplicitSync = true;
+    const localSignature = buildModeSignature(selectedModeKey, selectedModelId, selectedReasoningEffort);
+    if (remoteSignature === localSignature) {
+      lastAppliedModeSignatureRef.current = remoteSignature;
+      if (isModeSyncing) {
+        setIsModeSyncing(false);
+      }
+      return;
     }
 
-    if (didApplyExplicitSync) {
-      lastAppliedModeSignatureRef.current = `${resolvedModeKey}|${resolvedModelId}|${resolvedReasoningEffort}`;
+    if (remoteSelection.modeKey) {
+      setSelectedModeKey(remoteSelection.modeKey);
+    } else if (!selectedModeKey && remoteModeKey) {
+      setSelectedModeKey(remoteModeKey);
+    }
+    setSelectedModelId(remoteSelection.modelId);
+    setSelectedReasoningEffort(remoteSelection.reasoningEffort);
+    lastAppliedModeSignatureRef.current = remoteSignature;
+    if (isModeSyncing) {
+      setIsModeSyncing(false);
     }
   }, [
     conversationState,
+    defaultModeOption?.mode,
     hasHydratedModeFromLiveState,
+    isModeSyncing,
     selectedModeKey,
     selectedModelId,
     selectedReasoningEffort
@@ -682,7 +753,6 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     lastAppliedModeSignatureRef.current = "";
     setHasHydratedModeFromLiveState(false);
-    modeSyncRequestIdRef.current += 1;
     setIsModeSyncing(false);
   }, [selectedThreadId]);
 
@@ -767,8 +837,7 @@ export function App(): React.JSX.Element {
     setIsBusy(true);
     try {
       setError("");
-      const ownerOpts = liveState?.ownerClientId ? { ownerClientId: liveState.ownerClientId } : {};
-      await sendMessage({ threadId: selectedThreadId, ...ownerOpts, text: messageDraft });
+      await sendMessage({ threadId: selectedThreadId, text: messageDraft });
       setMessageDraft("");
       await refreshAll();
     } catch (e) {
@@ -776,45 +845,51 @@ export function App(): React.JSX.Element {
     } finally {
       setIsBusy(false);
     }
-  }, [liveState?.ownerClientId, messageDraft, refreshAll, selectedThreadId]);
+  }, [messageDraft, refreshAll, selectedThreadId]);
 
-  const applyMode = useCallback(async () => {
-    if (!selectedThreadId || !selectedMode) return;
-    const requestId = modeSyncRequestIdRef.current + 1;
-    modeSyncRequestIdRef.current = requestId;
+  const applyModeDraft = useCallback(async (draft: {
+    modeKey: string;
+    modelId: string;
+    reasoningEffort: string;
+  }) => {
+    if (!selectedThreadId) {
+      return;
+    }
+
+    const mode = modes.find((entry) => entry.mode === draft.modeKey) ?? null;
+    if (!mode) {
+      return;
+    }
+
+    const signature = buildModeSignature(draft.modeKey, draft.modelId, draft.reasoningEffort);
+    if (!isModeSyncing && lastAppliedModeSignatureRef.current === signature) {
+      return;
+    }
+
+    const previousSignature = lastAppliedModeSignatureRef.current;
+    lastAppliedModeSignatureRef.current = signature;
     setIsModeSyncing(true);
     try {
       setError("");
-      const ownerOpts = liveState?.ownerClientId ? { ownerClientId: liveState.ownerClientId } : {};
       await setCollaborationMode({
         threadId: selectedThreadId,
-        ...ownerOpts,
         collaborationMode: {
-          mode: selectedMode.mode,
+          mode: mode.mode,
           settings: {
-            model: selectedModelId || null,
-            reasoning_effort: selectedReasoningEffort || null,
-            developer_instructions: selectedMode.developer_instructions ?? null
+            model: draft.modelId || null,
+            reasoning_effort: draft.reasoningEffort || null,
+            developer_instructions: mode.developer_instructions ?? null
           }
         }
       });
       await loadSelectedThread(selectedThreadId);
     } catch (e) {
+      lastAppliedModeSignatureRef.current = previousSignature;
       setError(toErrorMessage(e));
     } finally {
-      if (modeSyncRequestIdRef.current === requestId) {
-        setIsModeSyncing(false);
-      }
+      setIsModeSyncing(false);
     }
-  }, [liveState?.ownerClientId, loadSelectedThread, selectedMode, selectedModelId, selectedReasoningEffort, selectedThreadId]);
-
-  useEffect(() => {
-    if (!selectedThreadId || !selectedMode || !hasHydratedModeFromLiveState) return;
-    const signature = `${selectedMode.mode}|${selectedModelId}|${selectedReasoningEffort}`;
-    if (signature === lastAppliedModeSignatureRef.current) return;
-    lastAppliedModeSignatureRef.current = signature;
-    void applyMode();
-  }, [applyMode, hasHydratedModeFromLiveState, selectedMode, selectedModelId, selectedReasoningEffort, selectedThreadId]);
+  }, [isModeSyncing, loadSelectedThread, modes, selectedThreadId]);
 
   const submitPendingRequest = useCallback(async () => {
     if (!selectedThreadId || !activeRequest) return;
@@ -827,10 +902,8 @@ export function App(): React.JSX.Element {
     setIsBusy(true);
     try {
       setError("");
-      const ownerOpts = liveState?.ownerClientId ? { ownerClientId: liveState.ownerClientId } : {};
       await submitUserInput({
         threadId: selectedThreadId,
-        ...ownerOpts,
         requestId: activeRequest.id,
         response: { answers }
       });
@@ -840,17 +913,15 @@ export function App(): React.JSX.Element {
     } finally {
       setIsBusy(false);
     }
-  }, [activeRequest, answerDraft, liveState?.ownerClientId, refreshAll, selectedThreadId]);
+  }, [activeRequest, answerDraft, refreshAll, selectedThreadId]);
 
   const skipPendingRequest = useCallback(async () => {
     if (!selectedThreadId || !activeRequest) return;
     setIsBusy(true);
     try {
       setError("");
-      const ownerOpts = liveState?.ownerClientId ? { ownerClientId: liveState.ownerClientId } : {};
       await submitUserInput({
         threadId: selectedThreadId,
-        ...ownerOpts,
         requestId: activeRequest.id,
         response: { answers: {} }
       });
@@ -860,22 +931,21 @@ export function App(): React.JSX.Element {
     } finally {
       setIsBusy(false);
     }
-  }, [activeRequest, liveState?.ownerClientId, refreshAll, selectedThreadId]);
+  }, [activeRequest, refreshAll, selectedThreadId]);
 
   const runInterrupt = useCallback(async () => {
     if (!selectedThreadId) return;
     setIsBusy(true);
     try {
       setError("");
-      const ownerOpts = liveState?.ownerClientId ? { ownerClientId: liveState.ownerClientId } : {};
-      await interruptThread({ threadId: selectedThreadId, ...ownerOpts });
+      await interruptThread({ threadId: selectedThreadId });
       await refreshAll();
     } catch (e) {
       setError(toErrorMessage(e));
     } finally {
       setIsBusy(false);
     }
-  }, [liveState?.ownerClientId, refreshAll, selectedThreadId]);
+  }, [refreshAll, selectedThreadId]);
 
   const loadHistoryDetail = useCallback(async (id: string) => {
     if (!id) { setHistoryDetail(null); return; }
@@ -897,10 +967,100 @@ export function App(): React.JSX.Element {
     []
   );
 
+  const renderSidebarContent = (viewport: "desktop" | "mobile"): React.JSX.Element => (
+    <>
+      <div className="flex items-center justify-between px-4 h-14 border-b border-sidebar-border shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 rounded-md bg-foreground/90 shrink-0" />
+          <span className="text-sm font-semibold">Codex Monitor</span>
+        </div>
+        <div className="flex items-center gap-1">
+          {viewport === "desktop" && (
+            <IconBtn onClick={() => setDesktopSidebarOpen(false)} title="Hide sidebar">
+              <PanelLeft size={15} />
+            </IconBtn>
+          )}
+          {viewport === "mobile" && (
+            <Button
+              type="button"
+              onClick={() => setMobileSidebarOpen(false)}
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            >
+              <X size={14} />
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 pl-2 pr-0">
+        {threads.length === 0 && (
+          <div className="px-4 py-6 text-xs text-muted-foreground text-center">No threads</div>
+        )}
+        {threads.map((thread) => {
+          const isSelected = thread.id === selectedThreadId;
+          return (
+            <Button
+              key={thread.id}
+              type="button"
+              onClick={() => {
+                setSelectedThreadId(thread.id);
+                setMobileSidebarOpen(false);
+              }}
+              variant="ghost"
+              className={`w-full min-w-0 h-auto flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                isSelected
+                  ? "bg-muted/90 text-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+              }`}
+            >
+              <span className="min-w-0 flex-1 text-xs truncate leading-5">{threadLabel(thread)}</span>
+              {thread.updatedAt && (
+                <span className="shrink-0 text-[10px] text-muted-foreground/50">
+                  {formatDate(thread.updatedAt)}
+                </span>
+              )}
+            </Button>
+          );
+        })}
+      </div>
+
+      <div className="p-3 border-t border-sidebar-border shrink-0">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted/40 transition-colors cursor-default">
+              <span
+                className={`h-2 w-2 rounded-full shrink-0 ${
+                  allSystemsReady
+                    ? "bg-success"
+                    : hasAnySystemFailure
+                      ? "bg-danger"
+                      : "bg-muted-foreground/40"
+                }`}
+              />
+              <span className="font-mono">commit {commitLabel}</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="start" className="space-y-1 text-xs">
+            <div className="font-mono text-[11px]">commit {commitLabel}</div>
+            <div>App: {health?.state.appReady ? "ok" : "not ready"}</div>
+            <div>IPC: {health?.state.ipcConnected ? "connected" : "disconnected"}</div>
+            <div>Init: {health?.state.ipcInitialized ? "ready" : "not ready"}</div>
+            {health?.state.lastError && (
+              <div className="max-w-64 break-words text-destructive">
+                Error: {health.state.lastError}
+              </div>
+            )}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    </>
+  );
+
   /* ── Render ─────────────────────────────────────────────── */
   return (
     <TooltipProvider delayDuration={120}>
-      <LayoutGroup>
       <div className="h-screen flex overflow-hidden bg-background text-foreground font-sans">
 
       {/* Mobile sidebar backdrop */}
@@ -917,113 +1077,37 @@ export function App(): React.JSX.Element {
         )}
       </AnimatePresence>
 
-      {/* ── Sidebar ─────────────────────────────────────────── */}
-      <aside
-        className={`fixed md:relative z-50 flex flex-col h-full border-r border-sidebar-border bg-sidebar shrink-0 transition-transform duration-200 ease-in-out md:transition-[width,opacity] md:duration-200 md:translate-x-0 ${
-          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } ${
-          desktopSidebarOpen
-            ? "w-64 md:w-64 md:opacity-100 md:pointer-events-auto"
-            : "w-64 md:w-0 md:opacity-0 md:pointer-events-none"
-        }`}
-      >
-        {/* Sidebar header */}
-        <div className="flex items-center justify-between px-4 h-14 border-b border-sidebar-border shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded-md bg-foreground/90 shrink-0" />
-            <span className="text-sm font-semibold">Codex Monitor</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <AnimatePresence initial={false}>
-              {desktopSidebarOpen && (
-                <motion.div
-                  key="desktop-toggle-in-sidebar"
-                  layoutId="desktop-sidebar-toggle"
-                  transition={{ duration: 0.22, ease: "easeInOut" }}
-                  className="hidden md:block"
-                >
-                  <IconBtn onClick={() => setDesktopSidebarOpen(false)} title="Hide sidebar">
-                    <PanelLeft size={15} />
-                  </IconBtn>
-                </motion.div>
-              )}
-            </AnimatePresence>
-            <Button
-              type="button"
-              onClick={() => setMobileSidebarOpen(false)}
-              variant="ghost"
-              size="icon"
-              className="md:hidden h-7 w-7 text-muted-foreground hover:text-foreground"
-            >
-              <X size={14} />
-            </Button>
-          </div>
-        </div>
+      {/* Desktop sidebar */}
+      <AnimatePresence initial={false}>
+        {desktopSidebarOpen && (
+          <motion.aside
+            key="desktop-sidebar"
+            initial={{ x: -280, opacity: 0.94 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -280, opacity: 0.94 }}
+            transition={{ type: "spring", stiffness: 380, damping: 36, mass: 0.7 }}
+            className="hidden md:flex fixed inset-y-0 left-0 z-30 w-64 flex-col border-r border-sidebar-border bg-sidebar shadow-xl"
+          >
+            {renderSidebarContent("desktop")}
+          </motion.aside>
+        )}
+      </AnimatePresence>
 
-        {/* Thread list */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 pl-2 pr-0">
-          {threads.length === 0 && (
-            <div className="px-4 py-6 text-xs text-muted-foreground text-center">No threads</div>
-          )}
-          {threads.map((thread) => {
-            const isSelected = thread.id === selectedThreadId;
-            return (
-              <Button
-                key={thread.id}
-                type="button"
-                onClick={() => {
-                  setSelectedThreadId(thread.id);
-                  setMobileSidebarOpen(false);
-                }}
-                variant="ghost"
-                className={`w-full min-w-0 h-auto flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition-colors ${
-                  isSelected
-                    ? "bg-muted/90 text-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                }`}
-              >
-                <span className="min-w-0 flex-1 text-xs truncate leading-5">{threadLabel(thread)}</span>
-                {thread.updatedAt && (
-                  <span className="shrink-0 text-[10px] text-muted-foreground/50">
-                    {formatDate(thread.updatedAt)}
-                  </span>
-                )}
-              </Button>
-            );
-          })}
-        </div>
-
-        {/* Sidebar footer — status */}
-        <div className="p-3 border-t border-sidebar-border shrink-0">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted/40 transition-colors cursor-default">
-                <span
-                  className={`h-2 w-2 rounded-full shrink-0 ${
-                    allSystemsReady
-                      ? "bg-success"
-                      : hasAnySystemFailure
-                        ? "bg-danger"
-                        : "bg-muted-foreground/40"
-                  }`}
-                />
-                <span className="font-mono">commit {commitLabel}</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="top" align="start" className="space-y-1 text-xs">
-              <div className="font-mono text-[11px]">commit {commitLabel}</div>
-              <div>App: {health?.state.appReady ? "ok" : "not ready"}</div>
-              <div>IPC: {health?.state.ipcConnected ? "connected" : "disconnected"}</div>
-              <div>Init: {health?.state.ipcInitialized ? "ready" : "not ready"}</div>
-              {health?.state.lastError && (
-                <div className="max-w-64 break-words text-destructive">
-                  Error: {health.state.lastError}
-                </div>
-              )}
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      </aside>
+      {/* Mobile sidebar */}
+      <AnimatePresence initial={false}>
+        {mobileSidebarOpen && (
+          <motion.aside
+            key="mobile-sidebar"
+            initial={{ x: -280 }}
+            animate={{ x: 0 }}
+            exit={{ x: -280 }}
+            transition={{ type: "spring", stiffness: 380, damping: 36, mass: 0.7 }}
+            className="md:hidden fixed inset-y-0 left-0 z-50 w-64 flex flex-col border-r border-sidebar-border bg-sidebar shadow-xl"
+          >
+            {renderSidebarContent("mobile")}
+          </motion.aside>
+        )}
+      </AnimatePresence>
 
       {/* ── Main area ───────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -1036,20 +1120,13 @@ export function App(): React.JSX.Element {
                 <Menu size={15} />
               </IconBtn>
             </div>
-            <AnimatePresence initial={false}>
-              {!desktopSidebarOpen && (
-                <motion.div
-                  key="desktop-toggle-in-header"
-                  layoutId="desktop-sidebar-toggle"
-                  transition={{ duration: 0.22, ease: "easeInOut" }}
-                  className="hidden md:block"
-                >
-                  <IconBtn onClick={() => setDesktopSidebarOpen(true)} title="Show sidebar">
-                    <PanelLeft size={15} />
-                  </IconBtn>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {!desktopSidebarOpen && (
+              <div className="hidden md:block">
+                <IconBtn onClick={() => setDesktopSidebarOpen(true)} title="Show sidebar">
+                  <PanelLeft size={15} />
+                </IconBtn>
+              </div>
+            )}
             <div className="min-w-0">
               <div className="text-sm font-medium truncate leading-5">
                 {selectedThread ? threadLabel(selectedThread) : "No thread selected"}
@@ -1130,7 +1207,7 @@ export function App(): React.JSX.Element {
                       {selectedThreadId ? "No messages yet" : "Select a thread from the sidebar"}
                     </div>
                   ) : (
-                    <motion.div layout={!suppressEntryAnimations} className="space-y-8">
+                    <motion.div layout={allowEntryLayoutAnimations} className="space-y-8">
                       {hasHiddenChatItems && (
                         <div className="flex justify-center">
                           <Button
@@ -1153,11 +1230,11 @@ export function App(): React.JSX.Element {
                         const turnInProgress = isLastTurn && isGenerating;
                         const items = turn.items ?? [];
                         return (
-                          <motion.div layout={!suppressEntryAnimations} key={turn.turnId ?? turnIndex} className="space-y-5">
+                          <motion.div layout={allowEntryLayoutAnimations} key={turn.turnId ?? turnIndex} className="space-y-5">
                             <AnimatePresence initial={false}>
                             {visibleItems.map(({ item, itemIndexInTurn, globalItemIndex }) => (
                               <motion.div
-                                layout={!suppressEntryAnimations}
+                                layout={allowEntryLayoutAnimations}
                                 key={item.id ?? `${turnIndex}-${itemIndexInTurn}`}
                                 initial={suppressEntryAnimations ? false : { opacity: 0, y: 12 }}
                                 animate={{ opacity: 1, y: 0 }}
@@ -1280,11 +1357,16 @@ export function App(): React.JSX.Element {
                       type="button"
                       onClick={() => {
                         if (!planModeOption) return;
-                        if (isPlanModeEnabled) {
-                          setSelectedModeKey(defaultModeOption?.mode ?? selectedModeKey);
-                          return;
-                        }
-                        setSelectedModeKey(planModeOption.mode);
+                        const nextModeKey = isPlanModeEnabled
+                          ? (defaultModeOption?.mode ?? selectedModeKey)
+                          : planModeOption.mode;
+                        if (!nextModeKey) return;
+                        setSelectedModeKey(nextModeKey);
+                        void applyModeDraft({
+                          modeKey: nextModeKey,
+                          modelId: selectedModelId,
+                          reasoningEffort: selectedReasoningEffort
+                        });
                       }}
                       variant="ghost"
                       size="sm"
@@ -1300,8 +1382,16 @@ export function App(): React.JSX.Element {
                     </Button>
                     <Select
                       value={selectedModelId || APP_DEFAULT_VALUE}
-                      onValueChange={(value) => setSelectedModelId(value === APP_DEFAULT_VALUE ? "" : value)}
-                      disabled={!selectedThreadId}
+                      onValueChange={(value) => {
+                        const nextModelId = value === APP_DEFAULT_VALUE ? "" : value;
+                        setSelectedModelId(nextModelId);
+                        void applyModeDraft({
+                          modeKey: selectedModeKey,
+                          modelId: nextModelId,
+                          reasoningEffort: selectedReasoningEffort
+                        });
+                      }}
+                      disabled={!selectedThreadId || !selectedModeKey}
                     >
                       <SelectTrigger className="h-8 w-[132px] sm:w-[176px] shrink-0 rounded-full border-0 bg-transparent dark:bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-0">
                         <SelectValue placeholder="Model" />
@@ -1317,10 +1407,16 @@ export function App(): React.JSX.Element {
                     </Select>
                     <Select
                       value={selectedReasoningEffort || APP_DEFAULT_VALUE}
-                      onValueChange={(value) =>
-                        setSelectedReasoningEffort(value === APP_DEFAULT_VALUE ? "" : value)
-                      }
-                      disabled={!selectedThreadId}
+                      onValueChange={(value) => {
+                        const nextReasoningEffort = value === APP_DEFAULT_VALUE ? "" : value;
+                        setSelectedReasoningEffort(nextReasoningEffort);
+                        void applyModeDraft({
+                          modeKey: selectedModeKey,
+                          modelId: selectedModelId,
+                          reasoningEffort: nextReasoningEffort
+                        });
+                      }}
+                      disabled={!selectedThreadId || !selectedModeKey}
                     >
                       <SelectTrigger className="h-8 w-[104px] sm:w-[148px] shrink-0 rounded-full border-0 bg-transparent dark:bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-0">
                         <SelectValue placeholder="Effort" />
@@ -1522,7 +1618,6 @@ export function App(): React.JSX.Element {
         )}
       </div>
       </div>
-      </LayoutGroup>
     </TooltipProvider>
   );
 }

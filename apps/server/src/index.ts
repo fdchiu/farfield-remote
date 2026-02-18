@@ -268,9 +268,21 @@ function summarizeActionDetails(details: Record<string, unknown>): Record<string
 
   const modeValue = details["collaborationMode"];
   if (modeValue && typeof modeValue === "object") {
-    const maybeMode = (modeValue as Record<string, unknown>)["mode"];
+    const modeRecord = modeValue as Record<string, unknown>;
+    const maybeMode = modeRecord["mode"];
     if (typeof maybeMode === "string") {
       summary["mode"] = maybeMode;
+    }
+
+    const settings = modeRecord["settings"];
+    if (settings && typeof settings === "object") {
+      const settingsRecord = settings as Record<string, unknown>;
+      if (Object.prototype.hasOwnProperty.call(settingsRecord, "model")) {
+        summary["model"] = settingsRecord["model"];
+      }
+      if (Object.prototype.hasOwnProperty.call(settingsRecord, "reasoning_effort")) {
+        summary["reasoningEffort"] = settingsRecord["reasoning_effort"];
+      }
     }
   }
 
@@ -524,55 +536,15 @@ async function resolveTurnStartTemplate(
 ): Promise<{
   turnStartTemplate: ReturnType<typeof findLatestTurnParamsTemplate>;
   conversationState: ThreadConversationState;
-  source: "live-state" | "thread/read";
+  source: "thread/read";
 }> {
-  const reasons: string[] = [];
-  const live = getThreadLiveState(threadId);
-
-  if (live.conversationState) {
-    try {
-      const conversationState = parseThreadConversationState(live.conversationState);
-      return {
-        turnStartTemplate: findLatestTurnParamsTemplate(conversationState),
-        conversationState,
-        source: "live-state"
-      };
-    } catch (error) {
-      logger.warn(
-        {
-          threadId,
-          source: "live-state",
-          error: toErrorMessage(error)
-        },
-        "turn-template-resolution-failed"
-      );
-      reasons.push(`live-state: ${toErrorMessage(error)}`);
-    }
-  } else {
-    reasons.push("live-state: no snapshot yet");
-  }
-
-  try {
-    const threadResult = await runAppServerCall(() => appClient.readThread(threadId, true));
-    const conversationState = parseThreadConversationState(threadResult.thread);
-    return {
-      turnStartTemplate: findLatestTurnParamsTemplate(conversationState),
-      conversationState,
-      source: "thread/read"
-    };
-  } catch (error) {
-    logger.warn(
-      {
-        threadId,
-        source: "thread/read",
-        error: toErrorMessage(error)
-      },
-      "turn-template-resolution-failed"
-    );
-    reasons.push(`thread/read: ${toErrorMessage(error)}`);
-  }
-
-  throw new Error(`No turn params template available. ${reasons.join("; ")}`);
+  const threadResult = await runAppServerCall(() => appClient.readThread(threadId, true));
+  const conversationState = parseThreadConversationState(threadResult.thread);
+  return {
+    turnStartTemplate: findLatestTurnParamsTemplate(conversationState),
+    conversationState,
+    source: "thread/read"
+  };
 }
 
 function extractThreadId(frame: IpcFrame): string | null {
