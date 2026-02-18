@@ -47,6 +47,19 @@ pnpm dev:remote -- --agents=opencode      # network-accessible (opencode)
 - pnpm 10+
 - Codex or OpenCode installed locally
 
+## Codex Schema Sync
+
+Farfield now vendors official Codex app-server schemas and generates protocol Zod validators from them.
+
+```bash
+pnpm generate:codex-schema
+```
+
+This command updates:
+
+- `packages/codex-protocol/vendor/codex-app-server-schema/` (stable + experimental TypeScript and JSON Schema)
+- `packages/codex-protocol/src/generated/app-server/` (generated Zod schema modules used by the app)
+
 ## License
 
 MIT

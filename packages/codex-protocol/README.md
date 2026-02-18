@@ -56,3 +56,18 @@ All helpers throw `ProtocolValidationError` with issue paths.
 pnpm --filter @farfield/protocol build
 pnpm --filter @farfield/protocol test
 ```
+
+## Generated App-Server Schemas
+
+The app-server schemas in this package are generated from the official Codex app-server schema output.
+
+From repo root:
+
+```bash
+pnpm generate:codex-schema
+```
+
+This regenerates:
+
+- `packages/codex-protocol/vendor/codex-app-server-schema/`
+- `packages/codex-protocol/src/generated/app-server/`

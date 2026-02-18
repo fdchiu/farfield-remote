@@ -535,11 +535,11 @@ describe("codex-protocol schemas", () => {
       parseUserInputResponsePayload({
         answers: {
           q: {
-            answers: [""]
+            answers: [1]
           }
         }
       })
-    ).toThrowError(/String must contain at least 1 character/);
+    ).toThrowError(/Expected string, received number/);
   });
 
   it("parses collaboration mode list response", () => {
@@ -609,7 +609,8 @@ describe("codex-protocol schemas", () => {
           defaultReasoningEffort: "medium",
           inputModalities: ["text"],
           supportsPersonality: true,
-          isDefault: true
+          isDefault: true,
+          hidden: false
         }
       ],
       nextCursor: null,
@@ -625,6 +626,10 @@ describe("codex-protocol schemas", () => {
         id: "thread-123",
         preview: "hello",
         modelProvider: "openai",
+        createdAt: 1700000000,
+        updatedAt: 1700000000,
+        cwd: "/tmp/workspace",
+        source: "cli",
         path: "/tmp/thread.jsonl",
         cliVersion: "0.1.0",
         turns: [

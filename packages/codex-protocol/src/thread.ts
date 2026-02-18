@@ -7,6 +7,7 @@ import {
   NullableStringSchema
 } from "./common.js";
 import { ProtocolValidationError } from "./errors.js";
+import { ToolRequestUserInputResponseSchema } from "./generated/app-server/index.js";
 
 export const CollaborationModeSettingsSchema = z
   .object({
@@ -436,15 +437,11 @@ export function parseThreadStreamStateChangedParams(
 
 export const UserInputAnswerSchema = z
   .object({
-    answers: z.array(z.string().min(1))
+    answers: z.array(z.string())
   })
   .passthrough();
 
-export const UserInputResponsePayloadSchema = z
-  .object({
-    answers: z.record(UserInputAnswerSchema)
-  })
-  .passthrough();
+export const UserInputResponsePayloadSchema = ToolRequestUserInputResponseSchema.passthrough();
 
 export type UserInputResponsePayload = z.infer<typeof UserInputResponsePayloadSchema>;
 

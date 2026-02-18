@@ -227,8 +227,12 @@ function AgentFavicon({
   );
 }
 
-function isPlanModeOption(mode: { mode: string; name: string }): boolean {
-  return mode.mode.toLowerCase().includes("plan") || mode.name.toLowerCase().includes("plan");
+function isPlanModeOption(mode: {
+  mode?: string | null | undefined;
+  name: string;
+}): boolean {
+  const modeKey = typeof mode.mode === "string" ? mode.mode : "";
+  return modeKey.toLowerCase().includes("plan") || mode.name.toLowerCase().includes("plan");
 }
 
 function getConversationStateUpdatedAt(
@@ -1260,7 +1264,7 @@ export function App(): React.JSX.Element {
     }
 
     const mode = modes.find((entry) => entry.mode === draft.modeKey) ?? null;
-    if (!mode) {
+    if (!mode || typeof mode.mode !== "string") {
       return;
     }
 

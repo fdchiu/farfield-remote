@@ -168,7 +168,8 @@ vi.stubGlobal(
               defaultReasoningEffort: "medium",
               inputModalities: ["text"],
               supportsPersonality: true,
-              isDefault: true
+              isDefault: true,
+              hidden: false
             }
           ],
           nextCursor: null

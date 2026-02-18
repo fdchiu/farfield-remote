@@ -9,7 +9,8 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "sanitize:traces": "node scripts/sanitize-traces.mjs"
+    "sanitize:traces": "node scripts/sanitize-traces.mjs",
+    "generate:codex-schema": "node scripts/generate-codex-schema.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
