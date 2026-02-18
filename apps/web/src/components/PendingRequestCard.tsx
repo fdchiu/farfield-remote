@@ -78,7 +78,7 @@ export function PendingRequestCard({
                 value={draft.freeform}
                 onChange={(e) => onDraftChange(q.id, "freeform", e.target.value)}
                 placeholder="Free-form answer…"
-                className="h-8 bg-background text-sm"
+                className="h-8 bg-background text-base md:text-sm"
               />
             )}
           </div>

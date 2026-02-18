@@ -1558,13 +1558,13 @@ export function App(): React.JSX.Element {
                     value={traceLabel}
                     onChange={(e) => setTraceLabel(e.target.value)}
                     placeholder="label"
-                    className="h-7 text-xs"
+                    className="h-7 text-base md:text-xs"
                   />
                   <Input
                     value={traceNote}
                     onChange={(e) => setTraceNote(e.target.value)}
                     placeholder="marker note"
-                    className="h-7 text-xs"
+                    className="h-7 text-base md:text-xs"
                   />
                   <div className="flex gap-1.5">
                     {(["Start", "Mark", "Stop"] as const).map((btn) => (

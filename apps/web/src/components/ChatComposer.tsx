@@ -106,7 +106,7 @@ export function ChatComposer({
         }}
         placeholder="Message Codex…"
         rows={1}
-        className="flex-1 min-h-9 max-h-[200px] resize-none overflow-y-auto border-0 bg-transparent px-0 py-2 text-sm leading-5 shadow-none transition-[height] duration-90 ease-out focus-visible:ring-0"
+        className="flex-1 min-h-9 max-h-[200px] resize-none overflow-y-auto border-0 bg-transparent px-0 py-2 text-base leading-5 shadow-none transition-[height] duration-90 ease-out focus-visible:ring-0 md:text-sm"
       />
       <Button
         type="button"
