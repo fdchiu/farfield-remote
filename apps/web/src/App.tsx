@@ -115,6 +115,43 @@ const APP_DEFAULT_VALUE = "__app_default__";
 const ASSUMED_APP_DEFAULT_MODEL = "gpt-5.3-codex";
 const ASSUMED_APP_DEFAULT_EFFORT = "medium";
 const SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY = "farfield.sidebar.collapsed-groups.v1";
+const AGENT_FAVICON_BY_ID: Record<AgentId, string> = {
+  codex: "https://openai.com/favicon.ico",
+  opencode: "https://opencode.ai/favicon.ico"
+};
+
+function agentFavicon(agentId: AgentId | null | undefined): string | null {
+  if (!agentId) {
+    return null;
+  }
+  return AGENT_FAVICON_BY_ID[agentId] ?? null;
+}
+
+function AgentFavicon({
+  agentId,
+  label,
+  className
+}: {
+  agentId: AgentId;
+  label: string;
+  className?: string;
+}) {
+  const faviconUrl = agentFavicon(agentId);
+  if (!faviconUrl) {
+    return null;
+  }
+
+  return (
+    <img
+      src={faviconUrl}
+      alt={label}
+      title={label}
+      className={className}
+      loading="lazy"
+      decoding="async"
+    />
+  );
+}
 
 function isPlanModeOption(mode: { mode: string; name: string }): boolean {
   return mode.mode.toLowerCase().includes("plan") || mode.name.toLowerCase().includes("plan");
@@ -1190,8 +1227,12 @@ export function App(): React.JSX.Element {
                               >
                                 <span className="min-w-0 flex-1 flex items-center gap-1.5 truncate leading-5">
                                   {thread.agentId && (
-                                    <span className="shrink-0 text-[9px] px-1 py-0 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium leading-4">
-                                      {agentsById[thread.agentId]?.label ?? "Agent"}
+                                    <span className="shrink-0 h-4 w-4 rounded-sm bg-muted/30 ring-1 ring-border/60 flex items-center justify-center overflow-hidden">
+                                      <AgentFavicon
+                                        agentId={thread.agentId}
+                                        label={agentsById[thread.agentId]?.label ?? "Agent"}
+                                        className="h-3.5 w-3.5"
+                                      />
                                     </span>
                                   )}
                                   <span className="truncate">{threadLabel(thread)}</span>
@@ -1360,8 +1401,12 @@ export function App(): React.JSX.Element {
               <div className="text-sm font-medium truncate leading-5 flex items-center gap-1.5">
                 {selectedThread ? threadLabel(selectedThread) : "No thread selected"}
                 {selectedThread && activeAgentLabel && (
-                  <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium leading-3">
-                    {activeAgentLabel}
+                  <span className="shrink-0 h-5 w-5 rounded-md bg-muted/30 ring-1 ring-border/60 flex items-center justify-center overflow-hidden">
+                    <AgentFavicon
+                      agentId={activeThreadAgentId}
+                      label={activeAgentLabel}
+                      className="h-4 w-4"
+                    />
                   </span>
                 )}
               </div>
