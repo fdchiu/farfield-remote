@@ -14,6 +14,8 @@ import {
   CircleDot,
   ChevronRight,
   CirclePause,
+  Folder,
+  FolderOpen,
   Loader2,
   Menu,
   Moon,
@@ -108,6 +110,7 @@ const VISIBLE_CHAT_ITEMS_STEP = 120;
 const APP_DEFAULT_VALUE = "__app_default__";
 const ASSUMED_APP_DEFAULT_MODEL = "gpt-5.3-codex";
 const ASSUMED_APP_DEFAULT_EFFORT = "medium";
+const SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY = "codex-monitor.sidebar.collapsed-groups.v1";
 
 function isPlanModeOption(mode: { mode: string; name: string }): boolean {
   return mode.mode.toLowerCase().includes("plan") || mode.name.toLowerCase().includes("plan");
@@ -180,6 +183,59 @@ function readModeSelectionFromConversationState(state: NonNullable<ReadThreadRes
     modelId: normalizeModeSettingValue(state.latestModel, ASSUMED_APP_DEFAULT_MODEL),
     reasoningEffort: normalizeModeSettingValue(state.latestReasoningEffort, ASSUMED_APP_DEFAULT_EFFORT)
   };
+}
+
+function basenameFromPath(value: string): string {
+  const normalized = value.replaceAll("\\", "/").replace(/\/+$/, "");
+  if (!normalized) {
+    return value;
+  }
+  const parts = normalized.split("/").filter((part) => part.length > 0);
+  return parts[parts.length - 1] ?? normalized;
+}
+
+function readSidebarCollapsedGroupsFromStorage(): Record<string, boolean> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const storage = window.localStorage as Partial<Storage> | undefined;
+    if (!storage || typeof storage.getItem !== "function") {
+      return {};
+    }
+    const raw = storage.getItem(SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    const collapsed: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === "boolean") {
+        collapsed[key] = value;
+      }
+    }
+    return collapsed;
+  } catch {
+    return {};
+  }
+}
+
+function writeSidebarCollapsedGroupsToStorage(value: Record<string, boolean>): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    const storage = window.localStorage as Partial<Storage> | undefined;
+    if (!storage || typeof storage.setItem !== "function") {
+      return;
+    }
+    storage.setItem(SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    // Ignore storage errors.
+  }
 }
 
 function parseUiStateFromPath(pathname: string): { threadId: string | null; tab: "chat" | "debug" } {
@@ -427,7 +483,7 @@ export function App(): React.JSX.Element {
   const [streamEvents, setStreamEvents] = useState<StreamEventsResponse["events"]>([]);
   const [modes, setModes] = useState<ModesResponse["data"]>([]);
   const [models, setModels] = useState<ModelsResponse["data"]>([]);
-  const [messageDraft, setMessageDraft] = useState("");
+  const [hasMessageDraft, setHasMessageDraft] = useState(false);
   const [selectedModeKey, setSelectedModeKey] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState("");
@@ -451,6 +507,9 @@ export function App(): React.JSX.Element {
   const [suppressEntryAnimations, setSuppressEntryAnimations] = useState(false);
   const [hasHydratedModeFromLiveState, setHasHydratedModeFromLiveState] = useState(false);
   const [isModeSyncing, setIsModeSyncing] = useState(false);
+  const [sidebarCollapsedGroups, setSidebarCollapsedGroups] = useState<Record<string, boolean>>(
+    () => readSidebarCollapsedGroupsFromStorage()
+  );
 
   /* Refs */
   const selectedThreadIdRef = useRef<string | null>(null);
@@ -459,6 +518,8 @@ export function App(): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
   const chatContentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const resizeFrameRef = useRef<number | null>(null);
+  const previousTextareaHeightRef = useRef(0);
   const lastAppliedModeSignatureRef = useRef("");
 
   /* Derived */
@@ -466,6 +527,41 @@ export function App(): React.JSX.Element {
     () => threads.find((t) => t.id === selectedThreadId) ?? null,
     [threads, selectedThreadId]
   );
+  const groupedThreads = useMemo(() => {
+    type Group = {
+      key: string;
+      label: string;
+      latestUpdatedAt: number;
+      threads: Thread[];
+    };
+    const groups = new Map<string, Group>();
+
+    for (const thread of threads) {
+      const cwd = typeof thread.cwd === "string" && thread.cwd.trim() ? thread.cwd.trim() : null;
+      const path = typeof thread.path === "string" && thread.path.trim() ? thread.path.trim() : null;
+      const projectPath = cwd ?? path;
+      const key = projectPath ? `project:${projectPath}` : "project:unknown";
+      const label = projectPath ? basenameFromPath(projectPath) : "Unknown";
+      const updatedAt = typeof thread.updatedAt === "number" ? thread.updatedAt : 0;
+
+      const existing = groups.get(key);
+      if (existing) {
+        existing.threads.push(thread);
+        if (updatedAt > existing.latestUpdatedAt) {
+          existing.latestUpdatedAt = updatedAt;
+        }
+      } else {
+        groups.set(key, {
+          key,
+          label,
+          latestUpdatedAt: updatedAt,
+          threads: [thread]
+        });
+      }
+    }
+
+    return Array.from(groups.values()).sort((left, right) => right.latestUpdatedAt - left.latestUpdatedAt);
+  }, [threads]);
   const conversationState = useMemo(() => {
     const liveConversationState = liveState?.conversationState ?? null;
     const readConversationState = readThreadState?.thread ?? null;
@@ -756,6 +852,10 @@ export function App(): React.JSX.Element {
     setIsModeSyncing(false);
   }, [selectedThreadId]);
 
+  useEffect(() => {
+    writeSidebarCollapsedGroupsToStorage(sidebarCollapsedGroups);
+  }, [sidebarCollapsedGroups]);
+
   // Track whether chat view is at the bottom.
   useEffect(() => {
     if (activeTab !== "chat" || !scrollRef.current) {
@@ -823,29 +923,78 @@ export function App(): React.JSX.Element {
     };
   }, [conversationState, selectedThreadId, suppressEntryAnimations]);
 
+  const resizeComposerTextarea = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    const maxHeight = 200;
+    textarea.style.height = "auto";
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+    const currentHeight = previousTextareaHeightRef.current;
+
+    if (currentHeight <= 0) {
+      textarea.style.height = `${nextHeight}px`;
+      previousTextareaHeightRef.current = nextHeight;
+      return;
+    }
+
+    if (nextHeight === currentHeight) {
+      textarea.style.height = `${nextHeight}px`;
+      return;
+    }
+
+    textarea.style.height = `${currentHeight}px`;
+
+    if (resizeFrameRef.current !== null) {
+      window.cancelAnimationFrame(resizeFrameRef.current);
+    }
+
+    resizeFrameRef.current = window.requestAnimationFrame(() => {
+      if (!textareaRef.current) {
+        return;
+      }
+      textareaRef.current.style.height = `${nextHeight}px`;
+      resizeFrameRef.current = null;
+    });
+    previousTextareaHeightRef.current = nextHeight;
+  }, []);
+
   // Auto-resize textarea
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
-    }
-  }, [messageDraft]);
+    resizeComposerTextarea();
+  }, [resizeComposerTextarea]);
+
+  useEffect(() => {
+    return () => {
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+      }
+    };
+  }, []);
 
   /* Actions */
   const submitMessage = useCallback(async () => {
-    if (!selectedThreadId || !messageDraft.trim()) return;
+    const draft = textareaRef.current?.value ?? "";
+    if (!selectedThreadId || !draft.trim()) return;
     setIsBusy(true);
     try {
       setError("");
-      await sendMessage({ threadId: selectedThreadId, text: messageDraft });
-      setMessageDraft("");
+      await sendMessage({ threadId: selectedThreadId, text: draft });
+      if (textareaRef.current) {
+        textareaRef.current.value = "";
+      }
+      setHasMessageDraft(false);
+      previousTextareaHeightRef.current = 0;
+      resizeComposerTextarea();
       await refreshAll();
     } catch (e) {
       setError(toErrorMessage(e));
     } finally {
       setIsBusy(false);
     }
-  }, [messageDraft, refreshAll, selectedThreadId]);
+  }, [refreshAll, resizeComposerTextarea, selectedThreadId]);
 
   const applyModeDraft = useCallback(async (draft: {
     modeKey: string;
@@ -998,32 +1147,64 @@ export function App(): React.JSX.Element {
         {threads.length === 0 && (
           <div className="px-4 py-6 text-xs text-muted-foreground text-center">No threads</div>
         )}
-        {threads.map((thread) => {
-          const isSelected = thread.id === selectedThreadId;
-          return (
-            <Button
-              key={thread.id}
-              type="button"
-              onClick={() => {
-                setSelectedThreadId(thread.id);
-                setMobileSidebarOpen(false);
-              }}
-              variant="ghost"
-              className={`w-full min-w-0 h-auto flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition-colors ${
-                isSelected
-                  ? "bg-muted/90 text-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-              }`}
-            >
-              <span className="min-w-0 flex-1 text-xs truncate leading-5">{threadLabel(thread)}</span>
-              {thread.updatedAt && (
-                <span className="shrink-0 text-[10px] text-muted-foreground/50">
-                  {formatDate(thread.updatedAt)}
-                </span>
-              )}
-            </Button>
-          );
-        })}
+        <div className="space-y-2 pr-2">
+          {groupedThreads.map((group) => {
+            const hasSelectedThread = group.threads.some((thread) => thread.id === selectedThreadId);
+            const isCollapsed = hasSelectedThread ? false : Boolean(sidebarCollapsedGroups[group.key]);
+            return (
+              <div key={group.key} className="space-y-1">
+                <Button
+                  type="button"
+                  onClick={() =>
+                    setSidebarCollapsedGroups((prev) => ({
+                      ...prev,
+                      [group.key]: !isCollapsed
+                    }))
+                  }
+                  variant="ghost"
+                  className="h-6 w-full justify-start gap-2 rounded-lg px-2 py-1 text-left text-[13px] tracking-tight font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                >
+                  {isCollapsed ? (
+                    <Folder size={13} className="shrink-0" />
+                  ) : (
+                    <FolderOpen size={13} className="shrink-0" />
+                  )}
+                  <span className="min-w-0 truncate">{group.label}</span>
+                </Button>
+                {!isCollapsed && (
+                  <div className="space-y-1 pl-4">
+                    {group.threads.map((thread) => {
+                      const isSelected = thread.id === selectedThreadId;
+                      return (
+                        <Button
+                          key={thread.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedThreadId(thread.id);
+                            setMobileSidebarOpen(false);
+                          }}
+                          variant="ghost"
+                          className={`w-full min-w-0 h-auto flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left text-[13px] tracking-tight font-normal transition-colors ${
+                            isSelected
+                              ? "bg-muted/90 text-foreground shadow-sm"
+                              : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                          }`}
+                        >
+                          <span className="min-w-0 flex-1 truncate leading-5">{threadLabel(thread)}</span>
+                          {thread.updatedAt && (
+                            <span className="shrink-0 text-[10px] text-muted-foreground/50">
+                              {formatDate(thread.updatedAt)}
+                            </span>
+                          )}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="p-3 border-t border-sidebar-border shrink-0">
@@ -1305,11 +1486,14 @@ export function App(): React.JSX.Element {
 
                 {/* Composer */}
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-end gap-2 rounded-2xl border border-border bg-card px-4 py-3 focus-within:border-muted-foreground/40 transition-colors">
+                  <div className="flex items-end gap-2 rounded-[28px] border border-border bg-card pl-4 pr-2.5 py-2.5 focus-within:border-muted-foreground/40 transition-colors">
                     <Textarea
                       ref={textareaRef}
-                      value={messageDraft}
-                      onChange={(e) => setMessageDraft(e.target.value)}
+                      onChange={(e) => {
+                        const nextValue = e.target.value;
+                        setHasMessageDraft(nextValue.trim().length > 0);
+                        resizeComposerTextarea();
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                           e.preventDefault();
@@ -1318,7 +1502,7 @@ export function App(): React.JSX.Element {
                       }}
                       placeholder="Message Codex…"
                       rows={1}
-                      className="flex-1 min-h-[22px] max-h-[200px] resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 shadow-none focus-visible:ring-0"
+                      className="flex-1 min-h-9 max-h-[200px] resize-none overflow-y-auto border-0 bg-transparent px-0 py-2 text-sm leading-5 shadow-none transition-[height] duration-120 ease-out focus-visible:ring-0"
                     />
                     <Button
                       type="button"
@@ -1332,10 +1516,10 @@ export function App(): React.JSX.Element {
                       disabled={
                         isGenerating
                           ? !selectedThreadId || isBusy
-                          : !selectedThreadId || isBusy || !messageDraft.trim()
+                          : !selectedThreadId || isBusy || !hasMessageDraft
                       }
                       size="icon"
-                      className={`h-7 w-7 shrink-0 disabled:opacity-30 ${
+                      className={`h-9 w-9 shrink-0 self-end rounded-full disabled:opacity-30 ${
                         isGenerating
                           ? "bg-destructive text-destructive-foreground hover:bg-destructive/85"
                           : "bg-foreground text-background hover:bg-foreground/80"
