@@ -61,6 +61,7 @@ vi.stubGlobal(
           ok: true,
           data: [],
           nextCursor: null,
+          opencodeDirectories: [],
           pages: 0,
           truncated: false
         })

@@ -15,6 +15,7 @@ export class OpenCodeConnection {
   private client: OpencodeClient | null = null;
   private server: { url: string; close(): void } | null = null;
   private readonly options: OpenCodeClientOptions;
+  private baseUrl: string | null = null;
 
   public constructor(options: OpenCodeClientOptions = {}) {
     this.options = options;
@@ -22,9 +23,8 @@ export class OpenCodeConnection {
 
   public async start(): Promise<void> {
     if (this.options.url) {
-      this.client = createOpencodeClient({
-        baseUrl: this.options.url
-      } as OpencodeClientConfig);
+      this.baseUrl = this.options.url;
+      this.client = this.createClient(this.baseUrl);
       return;
     }
 
@@ -34,7 +34,8 @@ export class OpenCodeConnection {
       timeout: 30_000
     });
 
-    this.client = result.client;
+    this.baseUrl = result.server.url;
+    this.client = this.createClient(this.baseUrl);
     this.server = result.server;
   }
 
@@ -44,6 +45,7 @@ export class OpenCodeConnection {
       this.server = null;
     }
     this.client = null;
+    this.baseUrl = null;
   }
 
   public getClient(): OpencodeClient {
@@ -59,5 +61,10 @@ export class OpenCodeConnection {
 
   public isConnected(): boolean {
     return this.client !== null;
+  }
+
+  private createClient(baseUrl: string): OpencodeClient {
+    const config: OpencodeClientConfig = { baseUrl };
+    return createOpencodeClient(config);
   }
 }

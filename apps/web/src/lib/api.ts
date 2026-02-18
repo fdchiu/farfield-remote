@@ -168,6 +168,7 @@ const ThreadListResponseSchema = z
   .object({
     data: z.array(ThreadListItemWithAgentSchema),
     nextCursor: z.union([z.string(), z.null(), z.undefined()]).transform((v) => v ?? null),
+    opencodeDirectories: z.array(z.string()).optional(),
     pages: z.number().int().nonnegative().optional(),
     truncated: z.boolean().optional()
   });

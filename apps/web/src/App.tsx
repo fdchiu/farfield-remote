@@ -339,6 +339,10 @@ export function App(): React.JSX.Element {
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null);
   const [answerDraft, setAnswerDraft] = useState<Record<string, { option: string; freeform: string }>>({});
   const [availableAgents, setAvailableAgents] = useState<AgentKind[]>(["codex"]);
+  const [openCodeDirectories, setOpenCodeDirectories] = useState<string[]>([]);
+  const [agentStatusByKind, setAgentStatusByKind] = useState<Partial<Record<AgentKind, boolean>>>({
+    codex: true
+  });
   const [defaultAgent, setDefaultAgent] = useState<AgentKind>("codex");
   const [selectedAgentKind, setSelectedAgentKind] = useState<AgentKind>("codex");
 
@@ -362,6 +366,7 @@ export function App(): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
   const chatContentRef = useRef<HTMLDivElement>(null);
   const lastAppliedModeSignatureRef = useRef("");
+  const hasHydratedAgentSelectionRef = useRef(false);
   const pendingMaterializationThreadIdsRef = useRef<Set<string>>(new Set());
 
   /* Derived */
@@ -375,6 +380,7 @@ export function App(): React.JSX.Element {
       label: string;
       projectPath: string | null;
       latestUpdatedAt: number;
+      preferredAgentKind: AgentKind | null;
       threads: Thread[];
     };
     const groups = new Map<string, Group>();
@@ -386,10 +392,14 @@ export function App(): React.JSX.Element {
       const key = projectPath ? `project:${projectPath}` : "project:unknown";
       const label = projectPath ? basenameFromPath(projectPath) : "Unknown";
       const updatedAt = typeof thread.updatedAt === "number" ? thread.updatedAt : 0;
+      const threadAgentKind = thread.agentKind ?? "codex";
 
       const existing = groups.get(key);
       if (existing) {
         existing.threads.push(thread);
+        if (threadAgentKind === "opencode") {
+          existing.preferredAgentKind = "opencode";
+        }
         if (updatedAt > existing.latestUpdatedAt) {
           existing.latestUpdatedAt = updatedAt;
         }
@@ -399,13 +409,33 @@ export function App(): React.JSX.Element {
           label,
           projectPath,
           latestUpdatedAt: updatedAt,
+          preferredAgentKind: threadAgentKind,
           threads: [thread]
         });
       }
     }
 
+    for (const directory of openCodeDirectories) {
+      const normalized = directory.trim();
+      if (!normalized) {
+        continue;
+      }
+      const key = `project:${normalized}`;
+      if (groups.has(key)) {
+        continue;
+      }
+      groups.set(key, {
+        key,
+        label: basenameFromPath(normalized),
+        projectPath: normalized,
+        latestUpdatedAt: 0,
+        preferredAgentKind: "opencode",
+        threads: []
+      });
+    }
+
     return Array.from(groups.values()).sort((left, right) => right.latestUpdatedAt - left.latestUpdatedAt);
-  }, [threads]);
+  }, [openCodeDirectories, threads]);
   const conversationState = useMemo(() => {
     const liveConversationState = liveState?.conversationState ?? null;
     const readConversationState = readThreadState?.thread ?? null;
@@ -502,14 +532,22 @@ export function App(): React.JSX.Element {
   const lastTurn = turns[turns.length - 1];
   const isGenerating = lastTurn?.status === "in-progress";
   const commitLabel = health?.state.gitCommit ?? "unknown";
-  const allSystemsReady =
-    health?.state.appReady === true &&
-    health?.state.ipcConnected === true &&
-    health?.state.ipcInitialized === true;
-  const hasAnySystemFailure =
-    health?.state.appReady === false ||
-    health?.state.ipcConnected === false ||
-    health?.state.ipcInitialized === false;
+  const codexConfigured = Object.prototype.hasOwnProperty.call(agentStatusByKind, "codex");
+  const openCodeConnected = agentStatusByKind.opencode === true;
+  const allSystemsReady = codexConfigured
+    ? (
+      health?.state.appReady === true &&
+      health?.state.ipcConnected === true &&
+      health?.state.ipcInitialized === true
+    )
+    : openCodeConnected;
+  const hasAnySystemFailure = codexConfigured
+    ? (
+      health?.state.appReady === false ||
+      health?.state.ipcConnected === false ||
+      health?.state.ipcInitialized === false
+    )
+    : !openCodeConnected;
   const allowEntryLayoutAnimations = !suppressEntryAnimations;
 
   /* Data loading */
@@ -525,18 +563,41 @@ export function App(): React.JSX.Element {
     ]);
     setHealth(nh);
     setThreads(nt.data);
+    setOpenCodeDirectories([...(nt.opencodeDirectories ?? [])].sort((left, right) => left.localeCompare(right)));
     setModes(nm.data);
     setModels(nmo.data);
     setTraceStatus(ntr);
     setHistory(nhist.history);
+    let preferredAgentKind: AgentKind | null = null;
     if (nag) {
+      const nextAgentStatus: Partial<Record<AgentKind, boolean>> = {};
+      for (const agent of nag.agents) {
+        nextAgentStatus[agent.kind] = agent.enabled;
+      }
+      setAgentStatusByKind(nextAgentStatus);
       const enabledAgents = nag.agents.filter((a) => a.enabled).map((a) => a.kind);
       if (enabledAgents.length > 0) setAvailableAgents(enabledAgents);
       setDefaultAgent(nag.defaultAgent);
-      setSelectedAgentKind((cur) => (enabledAgents.includes(cur) ? cur : nag.defaultAgent));
+      const nextDefaultAgent = enabledAgents.includes(nag.defaultAgent)
+        ? nag.defaultAgent
+        : (enabledAgents[0] ?? nag.defaultAgent);
+      preferredAgentKind = nextDefaultAgent;
+      setSelectedAgentKind((cur) => {
+        if (!hasHydratedAgentSelectionRef.current) {
+          hasHydratedAgentSelectionRef.current = true;
+          return nextDefaultAgent;
+        }
+        return enabledAgents.includes(cur) ? cur : nextDefaultAgent;
+      });
     }
     setSelectedThreadId((cur) => {
       if (cur) return cur;
+      if (preferredAgentKind) {
+        const preferredThread = nt.data.find((thread) => thread.agentKind === preferredAgentKind);
+        if (preferredThread) {
+          return preferredThread.id;
+        }
+      }
       return nt.data[0]?.id ?? null;
     });
     setSelectedModeKey((cur) => {
@@ -993,12 +1054,33 @@ export function App(): React.JSX.Element {
       <div className="relative flex-1 min-h-0">
         <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden py-2 pl-2 pr-0">
           {threads.length === 0 && (
-            <div className="px-4 py-6 text-xs text-muted-foreground text-center">No threads</div>
+            <div className="px-4 py-6 text-xs text-muted-foreground text-center space-y-3">
+              <div>No threads</div>
+              {availableAgents.length > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full"
+                  disabled={isBusy}
+                  onClick={() => {
+                    const defaultProjectPath = selectedAgentKind === "opencode"
+                      ? (openCodeDirectories[0] ?? ".")
+                      : ".";
+                    void createNewThread(defaultProjectPath, selectedAgentKind);
+                  }}
+                >
+                  <Plus size={13} className="mr-1.5" />
+                  New {selectedAgentKind === "opencode" ? "OpenCode" : "Codex"} thread
+                </Button>
+              )}
+            </div>
           )}
           <div className="space-y-2 pr-2">
             {groupedThreads.map((group) => {
               const hasSelectedThread = group.threads.some((thread) => thread.id === selectedThreadId);
               const isCollapsed = hasSelectedThread ? false : Boolean(sidebarCollapsedGroups[group.key]);
+              const nextAgentKind = group.preferredAgentKind ?? selectedAgentKind;
               return (
                 <div key={group.key} className="space-y-1">
                   <div className="flex items-center gap-1">
@@ -1025,11 +1107,11 @@ export function App(): React.JSX.Element {
                         if (!group.projectPath) {
                           return;
                         }
-                        void createNewThread(group.projectPath);
+                        void createNewThread(group.projectPath, nextAgentKind);
                       }}
                       title={
                         group.projectPath
-                          ? `New thread in ${group.label}`
+                          ? `New ${nextAgentKind} thread in ${group.label}`
                           : "Cannot create thread: missing project path"
                       }
                       disabled={isBusy || !group.projectPath}
@@ -1047,6 +1129,11 @@ export function App(): React.JSX.Element {
                         className="overflow-hidden"
                       >
                         <div className="space-y-1 pl-4 pt-0.5">
+                          {group.threads.length === 0 && (
+                            <div className="px-2.5 py-1 text-[11px] text-muted-foreground/70">
+                              No threads yet
+                            </div>
+                          )}
                           {group.threads.map((thread) => {
                             const isSelected = thread.id === selectedThreadId;
                             return (
@@ -1064,7 +1151,14 @@ export function App(): React.JSX.Element {
                                     : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                                 }`}
                               >
-                                <span className="min-w-0 flex-1 truncate leading-5">{threadLabel(thread)}</span>
+                                <span className="min-w-0 flex-1 flex items-center gap-1.5 truncate leading-5">
+                                  {(thread as Thread & { agentKind?: string }).agentKind === "opencode" && (
+                                    <span className="shrink-0 text-[9px] px-1 py-0 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium leading-4">
+                                      OC
+                                    </span>
+                                  )}
+                                  <span className="truncate">{threadLabel(thread)}</span>
+                                </span>
                                 {thread.updatedAt && (
                                   <span className="shrink-0 text-[10px] text-muted-foreground/50">
                                     {formatDate(thread.updatedAt)}
@@ -1107,9 +1201,15 @@ export function App(): React.JSX.Element {
             </TooltipTrigger>
             <TooltipContent side="top" align="start" className="space-y-1 text-xs">
               <div className="font-mono text-[11px]">commit {commitLabel}</div>
-              <div>App: {health?.state.appReady ? "ok" : "not ready"}</div>
-              <div>IPC: {health?.state.ipcConnected ? "connected" : "disconnected"}</div>
-              <div>Init: {health?.state.ipcInitialized ? "ready" : "not ready"}</div>
+              {codexConfigured ? (
+                <>
+                  <div>App: {health?.state.appReady ? "ok" : "not ready"}</div>
+                  <div>IPC: {health?.state.ipcConnected ? "connected" : "disconnected"}</div>
+                  <div>Init: {health?.state.ipcInitialized ? "ready" : "not ready"}</div>
+                </>
+              ) : (
+                <div>OpenCode: {openCodeConnected ? "connected" : "disconnected"}</div>
+              )}
               {health?.state.lastError && (
                 <div className="max-w-64 break-words text-destructive">
                   Error: {health.state.lastError}
@@ -1296,7 +1396,7 @@ export function App(): React.JSX.Element {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.14, ease: "easeOut" }}
-                  className="max-w-3xl mx-auto px-4 py-8"
+                  className="max-w-3xl mx-auto px-4 pt-16 pb-8"
                 >
                   {turns.length === 0 ? (
                     <div className="text-center py-20 text-sm text-muted-foreground">

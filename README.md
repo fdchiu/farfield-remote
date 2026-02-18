@@ -45,6 +45,21 @@ That's it. Both the backend and frontend start in parallel.
 
 The frontend proxies `/api` and `/events` to the backend automatically.
 
+## Run with OpenCode only
+
+```bash
+pnpm dev -- --opencode
+```
+
+You can also use aliases:
+
+```bash
+pnpm dev:opencode
+pnpm dev:opencode:remote
+```
+
+Farfield will load OpenCode sessions across all known OpenCode project directories and show them in the sidebar.
+
 ## Make it available remotely
 
 To access Farfield from another machine (e.g. a phone or tablet on the same network), use `dev:remote`:

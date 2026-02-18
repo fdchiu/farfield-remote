@@ -50,10 +50,104 @@ const ANSI_ESCAPE_REGEX = /\u001B\[[0-?]*[ -/]*[@-~]/g;
 const TRACE_DIR = path.resolve(process.cwd(), "traces");
 const DEFAULT_WORKSPACE = path.resolve(process.cwd());
 
-const OPENCODE_ENABLED = process.env["FARFIELD_OPENCODE_ENABLED"] === "true";
-const OPENCODE_PORT = Number(process.env["FARFIELD_OPENCODE_PORT"] ?? 0);
-const OPENCODE_URL = process.env["FARFIELD_OPENCODE_URL"] ?? null;
-const DEFAULT_AGENT: AgentKind = (process.env["FARFIELD_DEFAULT_AGENT"] as AgentKind) ?? "codex";
+interface ServerCliOptions {
+  opencode: boolean;
+  opencodeUrl: string | null;
+  opencodePort: number;
+  opencodeDirectory: string | null;
+}
+
+function parseServerCliOptions(argv: string[]): ServerCliOptions {
+  let opencode = false;
+  let opencodeUrl: string | null = null;
+  let opencodePort = 0;
+  let opencodeDirectory: string | null = null;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--") {
+      continue;
+    }
+
+    if (arg === "--opencode") {
+      opencode = true;
+      continue;
+    }
+
+    if (arg === "--opencode-url") {
+      const nextArg = argv[index + 1];
+      if (!nextArg || nextArg.startsWith("--")) {
+        throw new Error("Missing value for --opencode-url");
+      }
+      opencodeUrl = nextArg.trim();
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--opencode-port") {
+      const nextArg = argv[index + 1];
+      if (!nextArg || nextArg.startsWith("--")) {
+        throw new Error("Missing value for --opencode-port");
+      }
+      const parsed = Number(nextArg);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        throw new Error("Invalid value for --opencode-port");
+      }
+      opencodePort = parsed;
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--opencode-directory") {
+      const nextArg = argv[index + 1];
+      if (!nextArg || nextArg.startsWith("--")) {
+        throw new Error("Missing value for --opencode-directory");
+      }
+      opencodeDirectory = path.resolve(nextArg.trim());
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--help" || arg === "-h") {
+      process.stdout.write(
+        [
+          "Farfield server",
+          "",
+          "Usage: tsx watch src/index.ts [--opencode] [--opencode-url <url>] [--opencode-port <port>] [--opencode-directory <path>]",
+          "",
+          "Flags:",
+          "  --opencode                    Enable OpenCode mode and disable Codex mode",
+          "  --opencode-url <url>          Connect to an existing OpenCode server URL",
+          "  --opencode-port <port>        Preferred OpenCode server port",
+          "  --opencode-directory <path>   Optional startup directory for OpenCode queries"
+        ].join("\n")
+      );
+      process.stdout.write("\n");
+      process.exit(0);
+    }
+
+    throw new Error(`Unknown argument: ${arg}`);
+  }
+
+  if (!opencode && (opencodeUrl || opencodePort > 0 || opencodeDirectory)) {
+    opencode = true;
+  }
+
+  return {
+    opencode,
+    opencodeUrl,
+    opencodePort,
+    opencodeDirectory
+  };
+}
+
+const SERVER_CLI_OPTIONS = parseServerCliOptions(process.argv.slice(2));
+const OPENCODE_ENABLED = SERVER_CLI_OPTIONS.opencode;
+const CODEX_ENABLED = !OPENCODE_ENABLED;
+const OPENCODE_PORT = SERVER_CLI_OPTIONS.opencodePort;
+const OPENCODE_URL = SERVER_CLI_OPTIONS.opencodeUrl;
+const OPENCODE_DIRECTORY = SERVER_CLI_OPTIONS.opencodeDirectory;
+const DEFAULT_AGENT: AgentKind = OPENCODE_ENABLED ? "opencode" : "codex";
 
 function resolveCodexExecutablePath(): string {
   if (process.env["CODEX_CLI_PATH"]) {
@@ -178,6 +272,7 @@ const historyById = new Map<string, unknown>();
 
 const threadOwnerById = new Map<string, string>();
 const streamEventsByThreadId = new Map<string, IpcFrame[]>();
+const openCodeThreadDirectoryById = new Map<string, string>();
 
 const sseClients = new Set<ServerResponse>();
 
@@ -191,7 +286,7 @@ const runtimeState = {
   appReady: false,
   ipcConnected: false,
   ipcInitialized: false,
-  codexAvailable: true,
+  codexAvailable: CODEX_ENABLED,
   lastError: null as string | null
 };
 
@@ -474,6 +569,52 @@ function parseBoolean(value: string | null, fallback: boolean): boolean {
   return fallback;
 }
 
+function normalizeOpenCodeDirectoryInput(directory: string): string {
+  const trimmed = directory.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Directory is required");
+  }
+
+  const resolved = path.resolve(trimmed);
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`Directory does not exist: ${resolved}`);
+  }
+  const stats = fs.statSync(resolved);
+  if (!stats.isDirectory()) {
+    throw new Error(`Path is not a directory: ${resolved}`);
+  }
+  return resolved;
+}
+
+function normalizeOpenCodeDirectoryList(directories: string[]): string[] {
+  const deduped = new Set<string>();
+  for (const directory of directories) {
+    const normalized = directory.trim();
+    if (normalized.length > 0) {
+      deduped.add(path.resolve(normalized));
+    }
+  }
+  if (OPENCODE_DIRECTORY) {
+    deduped.add(OPENCODE_DIRECTORY);
+  }
+  return Array.from(deduped).sort((left, right) => left.localeCompare(right));
+}
+
+function registerOpenCodeThreadDirectory(threadId: string, directory: string | null | undefined): void {
+  if (!directory) {
+    return;
+  }
+  const normalized = directory.trim();
+  if (normalized.length === 0) {
+    return;
+  }
+  openCodeThreadDirectoryById.set(threadId, path.resolve(normalized));
+}
+
+function resolveOpenCodeThreadDirectory(threadId: string): string | undefined {
+  return openCodeThreadDirectoryById.get(threadId);
+}
+
 function getThreadLiveState(threadId: string): {
   ownerClientId: string | null;
   conversationState: unknown;
@@ -751,18 +892,21 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && pathname === "/api/agents") {
-      const agents: Array<{ kind: AgentKind; enabled: boolean }> = [
-        { kind: "codex", enabled: runtimeState.codexAvailable }
-      ];
+      const agents: Array<{ kind: AgentKind; enabled: boolean }> = [];
+      if (CODEX_ENABLED) {
+        agents.push({ kind: "codex", enabled: runtimeState.codexAvailable });
+      }
       if (OPENCODE_ENABLED && openCodeConnection) {
         agents.push({
           kind: "opencode",
           enabled: openCodeConnection.isConnected()
         });
       }
-      const effectiveDefault = runtimeState.codexAvailable
+      const enabledAgents = agents.filter((agent) => agent.enabled);
+      const enabledAgentKinds = enabledAgents.map((agent) => agent.kind);
+      const effectiveDefault = enabledAgentKinds.includes(DEFAULT_AGENT)
         ? DEFAULT_AGENT
-        : (openCodeConnection?.isConnected() ? "opencode" : DEFAULT_AGENT);
+        : (enabledAgentKinds[0] ?? DEFAULT_AGENT);
       jsonResponse(res, 200, {
         ok: true,
         agents,
@@ -773,7 +917,19 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && pathname === "/api/threads") {
       const body = parseBody(StartThreadBodySchema, await readJsonBody(req));
-      const agentKind: AgentKind = body.agentKind === "opencode" ? "opencode" : "codex";
+      const agentKind: AgentKind = body.agentKind
+        ? body.agentKind
+        : (
+          (
+            DEFAULT_AGENT === "opencode" &&
+            openCodeConnection?.isConnected()
+          ) || (
+            !runtimeState.codexAvailable &&
+            openCodeConnection?.isConnected()
+          )
+            ? "opencode"
+            : "codex"
+        );
 
       if (agentKind === "opencode") {
         if (!openCodeService) {
@@ -788,10 +944,26 @@ const server = http.createServer(async (req, res) => {
           agentKind: "opencode"
         });
 
+        let opencodeDirectory: string | undefined;
+        if (body.cwd) {
+          try {
+            opencodeDirectory = normalizeOpenCodeDirectoryInput(body.cwd);
+          } catch (error) {
+            jsonResponse(res, 400, {
+              ok: false,
+              error: toErrorMessage(error)
+            });
+            return;
+          }
+        } else if (OPENCODE_DIRECTORY) {
+          opencodeDirectory = OPENCODE_DIRECTORY;
+        }
+
         let ocResult;
         try {
           ocResult = await openCodeService.createSession({
-            ...(body.model ? { title: body.model } : {})
+            ...(body.model ? { title: body.model } : {}),
+            ...(opencodeDirectory ? { directory: opencodeDirectory } : {})
           });
         } catch (error) {
           const message = pushActionError("thread-create", error, {
@@ -802,10 +974,12 @@ const server = http.createServer(async (req, res) => {
         }
 
         registerThreadAgent(ocResult.threadId, "opencode");
+        registerOpenCodeThreadDirectory(ocResult.threadId, ocResult.mapped.cwd ?? opencodeDirectory);
 
         pushActionEvent("thread-create", "success", {
           threadId: ocResult.threadId,
-          agentKind: "opencode"
+          agentKind: "opencode",
+          directory: ocResult.mapped.cwd ?? opencodeDirectory ?? null
         });
 
         jsonResponse(res, 200, {
@@ -910,6 +1084,9 @@ const server = http.createServer(async (req, res) => {
                     }
               )
           );
+          for (const thread of result.data) {
+            registerThreadAgent(thread.id, "codex");
+          }
           codexData = result.data.map((t: Record<string, unknown>) => ({
             ...t,
             agentKind: "codex"
@@ -924,26 +1101,85 @@ const server = http.createServer(async (req, res) => {
       }
 
       let mergedData: Array<Record<string, unknown>> = codexData;
-      if (openCodeService) {
+      let opencodeDirectories: string[] = [];
+      if (openCodeService && openCodeConnection?.isConnected()) {
+        let directories: string[] = [];
         try {
-          const ocResult = await openCodeService.listSessions();
-          const ocData = ocResult.data.map((t) => ({
-            ...t,
-            agentKind: "opencode"
-          }));
-          mergedData = [...codexData, ...ocData];
+          directories = normalizeOpenCodeDirectoryList(await openCodeService.listProjectDirectories());
         } catch (error) {
           logger.warn(
             { error: toErrorMessage(error) },
-            "opencode-list-sessions-failed"
+            "opencode-list-projects-failed"
           );
         }
+
+        opencodeDirectories = directories;
+
+        const openCodeSessions = new Map<string, {
+          id: string;
+          preview: string;
+          createdAt: number;
+          updatedAt: number;
+          cwd?: string;
+          source: "opencode";
+        }>();
+
+        const populateSessionsForDirectory = async (directory: string): Promise<void> => {
+          const result = await openCodeService.listSessions({ directory });
+          for (const session of result.data) {
+            openCodeSessions.set(session.id, session);
+          }
+        };
+
+        if (directories.length > 0) {
+          await Promise.all(
+            directories.map(async (directory) => {
+              try {
+                await populateSessionsForDirectory(directory);
+              } catch (error) {
+                logger.warn(
+                  { directory, error: toErrorMessage(error) },
+                  "opencode-list-sessions-for-directory-failed"
+                );
+              }
+            })
+          );
+        } else {
+          try {
+            const result = await openCodeService.listSessions(
+              OPENCODE_DIRECTORY ? { directory: OPENCODE_DIRECTORY } : {}
+            );
+            for (const session of result.data) {
+              openCodeSessions.set(session.id, session);
+            }
+            if (OPENCODE_DIRECTORY) {
+              opencodeDirectories = [OPENCODE_DIRECTORY];
+            }
+          } catch (error) {
+            logger.warn(
+              { error: toErrorMessage(error) },
+              "opencode-list-sessions-failed"
+            );
+          }
+        }
+
+        const ocData = Array.from(openCodeSessions.values()).map((session) => {
+          registerThreadAgent(session.id, "opencode");
+          registerOpenCodeThreadDirectory(session.id, session.cwd);
+          return {
+            ...session,
+            agentKind: "opencode"
+          };
+        });
+
+        mergedData = [...codexData, ...ocData];
       }
 
       jsonResponse(res, 200, {
         ok: true,
         data: mergedData,
-        nextCursor
+        nextCursor,
+        opencodeDirectories
       });
       return;
     }
@@ -974,8 +1210,11 @@ const server = http.createServer(async (req, res) => {
 
       if (req.method === "GET" && segments.length === 3) {
         if (isOpenCodeThread(threadId) && openCodeService) {
+          const opencodeDirectory = resolveOpenCodeThreadDirectory(threadId);
           try {
-            const ocState = await openCodeService.getSessionState(threadId);
+            const ocState = await openCodeService.getSessionState(threadId, opencodeDirectory);
+            registerThreadAgent(threadId, "opencode");
+            registerOpenCodeThreadDirectory(threadId, ocState.cwd);
             jsonResponse(res, 200, {
               ok: true,
               thread: ocState,
@@ -989,6 +1228,15 @@ const server = http.createServer(async (req, res) => {
               threadId
             });
           }
+          return;
+        }
+
+        if (!runtimeState.codexAvailable) {
+          jsonResponse(res, 503, {
+            ok: false,
+            error: "Codex backend is disabled. Select an OpenCode thread or create one with agentKind: \"opencode\".",
+            threadId
+          });
           return;
         }
 
@@ -1038,6 +1286,7 @@ const server = http.createServer(async (req, res) => {
         const body = parseBody(SendMessageBodySchema, await readJsonBody(req));
 
         if (isOpenCodeThread(threadId) && openCodeService) {
+          const opencodeDirectory = resolveOpenCodeThreadDirectory(threadId);
           pushActionEvent("messages", "attempt", {
             threadId,
             textLength: body.text.length,
@@ -1047,7 +1296,8 @@ const server = http.createServer(async (req, res) => {
           try {
             await openCodeService.sendMessage({
               sessionId: threadId,
-              text: body.text
+              text: body.text,
+              ...(opencodeDirectory ? { directory: opencodeDirectory } : {})
             });
           } catch (error) {
             const message = pushActionError("messages", error, {
@@ -1064,6 +1314,15 @@ const server = http.createServer(async (req, res) => {
           });
 
           jsonResponse(res, 200, { ok: true, threadId });
+          return;
+        }
+
+        if (!runtimeState.codexAvailable) {
+          jsonResponse(res, 503, {
+            ok: false,
+            error: "Codex backend is disabled. Select an OpenCode thread or create one with agentKind: \"opencode\".",
+            threadId
+          });
           return;
         }
 
@@ -1104,6 +1363,15 @@ const server = http.createServer(async (req, res) => {
           jsonResponse(res, 400, {
             ok: false,
             error: "Collaboration modes are not supported for OpenCode threads",
+            threadId
+          });
+          return;
+        }
+
+        if (!runtimeState.codexAvailable) {
+          jsonResponse(res, 503, {
+            ok: false,
+            error: "Codex backend is disabled for this thread.",
             threadId
           });
           return;
@@ -1169,6 +1437,15 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
+        if (!runtimeState.codexAvailable) {
+          jsonResponse(res, 503, {
+            ok: false,
+            error: "Codex backend is disabled for this thread.",
+            threadId
+          });
+          return;
+        }
+
         if (!requireIpcReady(res)) {
           return;
         }
@@ -1229,13 +1506,14 @@ const server = http.createServer(async (req, res) => {
 
       if (req.method === "POST" && segments[3] === "interrupt") {
         if (isOpenCodeThread(threadId) && openCodeService) {
+          const opencodeDirectory = resolveOpenCodeThreadDirectory(threadId);
           pushActionEvent("interrupt", "attempt", {
             threadId,
             agentKind: "opencode"
           });
 
           try {
-            await openCodeService.abort(threadId);
+            await openCodeService.abort(threadId, opencodeDirectory);
           } catch (error) {
             const message = pushActionError("interrupt", error, {
               threadId,
@@ -1251,6 +1529,15 @@ const server = http.createServer(async (req, res) => {
           });
 
           jsonResponse(res, 200, { ok: true, threadId });
+          return;
+        }
+
+        if (!runtimeState.codexAvailable) {
+          jsonResponse(res, 503, {
+            ok: false,
+            error: "Codex backend is disabled for this thread.",
+            threadId
+          });
           return;
         }
 
@@ -1556,6 +1843,10 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function bootstrapConnections(): Promise<void> {
+  if (!CODEX_ENABLED) {
+    return;
+  }
+
   if (bootstrapInFlight) {
     return bootstrapInFlight;
   }
@@ -1648,12 +1939,20 @@ async function start(): Promise<void> {
     url: `http://${HOST}:${PORT}`,
     appExecutable: runtimeState.appExecutable,
     socketPath: runtimeState.socketPath,
-    opencodeEnabled: OPENCODE_ENABLED
+    codexEnabled: CODEX_ENABLED,
+    opencodeEnabled: OPENCODE_ENABLED,
+    opencodeDirectory: OPENCODE_DIRECTORY
   });
   broadcastRuntimeState();
   logger.info({ url: `http://${HOST}:${PORT}` }, "monitor-server-ready");
 
-  void bootstrapConnections();
+  if (CODEX_ENABLED) {
+    void bootstrapConnections();
+  } else {
+    pushSystem("Codex backend disabled by startup flags", {
+      opencodeMode: true
+    });
+  }
 
   if (openCodeConnection) {
     try {

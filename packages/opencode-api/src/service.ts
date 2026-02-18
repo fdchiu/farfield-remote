@@ -1,7 +1,8 @@
 import type {
   Session,
   Message,
-  Part
+  Part,
+  Project
 } from "@opencode-ai/sdk";
 import type { OpenCodeConnection } from "./client.js";
 import {
@@ -14,10 +15,12 @@ import {
 export interface OpenCodeSendMessageInput {
   sessionId: string;
   text: string;
+  directory?: string;
 }
 
 export interface OpenCodeCreateSessionInput {
   title?: string;
+  directory?: string;
 }
 
 export class OpenCodeMonitorService {
@@ -29,14 +32,42 @@ export class OpenCodeMonitorService {
 
   public async listSessions(): Promise<{
     data: MappedThreadListItem[];
+  }>;
+  public async listSessions(input: {
+    directory?: string;
+  }): Promise<{
+    data: MappedThreadListItem[];
+  }>;
+  public async listSessions(input?: {
+    directory?: string;
+  }): Promise<{
+    data: MappedThreadListItem[];
   }> {
     const client = this.connection.getClient();
-    const result = await client.session.list();
+    const directory = input?.directory?.trim();
+    const result = await client.session.list(
+      directory
+        ? {
+            query: {
+              directory
+            }
+          }
+        : {}
+    );
     const sessions = (result.data ?? []) as Session[];
 
     return {
       data: sessions.map(sessionToThreadListItem)
     };
+  }
+
+  public async listProjectDirectories(): Promise<string[]> {
+    const client = this.connection.getClient();
+    const result = await client.project.list();
+    const projects = (result.data ?? []) as Project[];
+    return projects
+      .map((project) => project.worktree)
+      .filter((directory) => directory.trim().length > 0);
   }
 
   public async createSession(input?: OpenCodeCreateSessionInput): Promise<{
@@ -45,11 +76,21 @@ export class OpenCodeMonitorService {
     mapped: MappedThreadListItem;
   }> {
     const client = this.connection.getClient();
+    const directory = input?.directory?.trim();
     const body: Record<string, string> = {};
     if (input?.title) {
       body["title"] = input.title;
     }
-    const result = await client.session.create({ body });
+    const result = await client.session.create({
+      body,
+      ...(directory
+        ? {
+            query: {
+              directory
+            }
+          }
+        : {})
+    });
 
     const session = result.data as Session;
     return {
@@ -59,22 +100,50 @@ export class OpenCodeMonitorService {
     };
   }
 
-  public async getSession(sessionId: string): Promise<Session> {
+  public async getSession(sessionId: string, directory?: string): Promise<Session> {
     const client = this.connection.getClient();
+    const normalizedDirectory = directory?.trim();
     const result = await client.session.get({
-      path: { id: sessionId }
+      path: { id: sessionId },
+      ...(normalizedDirectory
+        ? {
+            query: {
+              directory: normalizedDirectory
+            }
+          }
+        : {})
     });
     return result.data as Session;
   }
 
   public async getSessionState(
-    sessionId: string
+    sessionId: string,
+    directory?: string
   ): Promise<MappedThreadConversationState> {
     const client = this.connection.getClient();
+    const normalizedDirectory = directory?.trim();
 
     const [sessionResult, messagesResult] = await Promise.all([
-      client.session.get({ path: { id: sessionId } }),
-      client.session.messages({ path: { id: sessionId } })
+      client.session.get({
+        path: { id: sessionId },
+        ...(normalizedDirectory
+          ? {
+              query: {
+                directory: normalizedDirectory
+              }
+            }
+          : {})
+      }),
+      client.session.messages({
+        path: { id: sessionId },
+        ...(normalizedDirectory
+          ? {
+              query: {
+                directory: normalizedDirectory
+              }
+            }
+          : {})
+      })
     ]);
 
     const session = sessionResult.data as Session;
@@ -101,8 +170,16 @@ export class OpenCodeMonitorService {
     }
 
     const client = this.connection.getClient();
+    const directory = input.directory?.trim();
     await client.session.prompt({
       path: { id: input.sessionId },
+      ...(directory
+        ? {
+            query: {
+              directory
+            }
+          }
+        : {}),
       body: {
         parts: [
           { type: "text", text }
@@ -111,17 +188,33 @@ export class OpenCodeMonitorService {
     });
   }
 
-  public async abort(sessionId: string): Promise<void> {
+  public async abort(sessionId: string, directory?: string): Promise<void> {
     const client = this.connection.getClient();
+    const normalizedDirectory = directory?.trim();
     await client.session.abort({
-      path: { id: sessionId }
+      path: { id: sessionId },
+      ...(normalizedDirectory
+        ? {
+            query: {
+              directory: normalizedDirectory
+            }
+          }
+        : {})
     });
   }
 
-  public async deleteSession(sessionId: string): Promise<void> {
+  public async deleteSession(sessionId: string, directory?: string): Promise<void> {
     const client = this.connection.getClient();
+    const normalizedDirectory = directory?.trim();
     await client.session.delete({
-      path: { id: sessionId }
+      path: { id: sessionId },
+      ...(normalizedDirectory
+        ? {
+            query: {
+              directory: normalizedDirectory
+            }
+          }
+        : {})
     });
   }
 }
