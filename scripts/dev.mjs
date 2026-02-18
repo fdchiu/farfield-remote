@@ -7,12 +7,11 @@ const pnpmBinary = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 function printHelp() {
   process.stdout.write(
     [
-      "Usage: pnpm dev -- [--remote] [--opencode] [--opencode-directory <path>]",
+      "Usage: pnpm dev -- [--remote] [--agents=<ids>]",
       "",
       "Flags:",
       "  --remote                      Bind server and web to 0.0.0.0",
-      "  --opencode                    Enable OpenCode mode and disable Codex mode",
-      "  --opencode-directory <path>   Set OpenCode directory on startup",
+      "  --agents=<ids>                Comma-separated list: codex, opencode, all",
       "  --help                        Show this help message"
     ].join("\n")
   );
@@ -22,8 +21,7 @@ function printHelp() {
 function parseArgs(argv) {
   const result = {
     remote: false,
-    opencode: false,
-    opencodeDirectory: ""
+    agents: ""
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -39,18 +37,18 @@ function parseArgs(argv) {
       result.remote = true;
       continue;
     }
-    if (arg === "--opencode") {
-      result.opencode = true;
-      continue;
-    }
-    if (arg === "--opencode-directory") {
+    if (arg === "--agents") {
       const nextArg = argv[index + 1];
       if (!nextArg || nextArg.startsWith("--")) {
-        process.stderr.write("Missing value for --opencode-directory\n");
+        process.stderr.write("Missing value for --agents\n");
         process.exit(1);
       }
-      result.opencodeDirectory = nextArg;
+      result.agents = nextArg;
       index += 1;
+      continue;
+    }
+    if (arg.startsWith("--agents=")) {
+      result.agents = arg.slice("--agents=".length);
       continue;
     }
 
@@ -93,11 +91,8 @@ for (const filter of buildFilters) {
 
 const devScript = args.remote ? "dev:remote" : "dev";
 const serverArgs = [];
-if (args.opencode) {
-  serverArgs.push("--opencode");
-}
-if (args.opencodeDirectory.trim().length > 0) {
-  serverArgs.push("--opencode-directory", args.opencodeDirectory);
+if (args.agents.trim().length > 0) {
+  serverArgs.push(`--agents=${args.agents.trim()}`);
 }
 
 const serverCommand = ["--filter", "@farfield/server", devScript];

@@ -5,8 +5,6 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "dev:remote": "node scripts/dev.mjs --remote",
-    "dev:opencode": "node scripts/dev.mjs --opencode",
-    "dev:opencode:remote": "node scripts/dev.mjs --remote --opencode",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",

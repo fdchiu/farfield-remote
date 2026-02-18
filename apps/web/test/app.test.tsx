@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
 
 class MockEventSource {
@@ -15,6 +15,7 @@ vi.stubGlobal("EventSource", MockEventSource);
 
 // jsdom doesn't implement scrollTo or ResizeObserver.
 Element.prototype.scrollTo = vi.fn();
+window.scrollTo = vi.fn();
 vi.stubGlobal("ResizeObserver", class {
   observe() {}
   unobserve() {}
@@ -31,6 +32,67 @@ vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
   removeEventListener: vi.fn(),
   dispatchEvent: vi.fn()
 })));
+
+const codexCapabilities = {
+  canListModels: true,
+  canListCollaborationModes: true,
+  canSetCollaborationMode: true,
+  canSubmitUserInput: true,
+  canReadLiveState: true,
+  canReadStreamEvents: true
+};
+
+const opencodeCapabilities = {
+  canListModels: false,
+  canListCollaborationModes: false,
+  canSetCollaborationMode: false,
+  canSubmitUserInput: false,
+  canReadLiveState: false,
+  canReadStreamEvents: false
+};
+
+type CapabilityFixture = {
+  canListModels: boolean;
+  canListCollaborationModes: boolean;
+  canSetCollaborationMode: boolean;
+  canSubmitUserInput: boolean;
+  canReadLiveState: boolean;
+  canReadStreamEvents: boolean;
+};
+
+let agentsFixture: {
+  ok: true;
+  agents: Array<{
+    id: "codex" | "opencode";
+    label: string;
+    enabled: boolean;
+    connected: boolean;
+    capabilities: CapabilityFixture;
+    projectDirectories: string[];
+  }>;
+  defaultAgentId: "codex" | "opencode";
+};
+
+beforeEach(() => {
+  agentsFixture = {
+    ok: true,
+    agents: [
+      {
+        id: "codex",
+        label: "Codex",
+        enabled: true,
+        connected: true,
+        capabilities: codexCapabilities,
+        projectDirectories: []
+      }
+    ],
+    defaultAgentId: "codex"
+  };
+});
+
+afterEach(() => {
+  cleanup();
+});
 
 vi.stubGlobal(
   "fetch",
@@ -61,7 +123,6 @@ vi.stubGlobal(
           ok: true,
           data: [],
           nextCursor: null,
-          opencodeDirectories: [],
           pages: 0,
           truncated: false
         })
@@ -94,11 +155,23 @@ vi.stubGlobal(
           data: [
             {
               id: "gpt-5.3-codex",
+              model: "gpt-5.3-codex",
+              upgrade: null,
               displayName: "GPT-5.3 Codex",
-              providerId: "openai",
-              providerName: "OpenAI"
+              description: "Test model",
+              supportedReasoningEfforts: [
+                {
+                  reasoningEffort: "medium",
+                  description: "Balanced"
+                }
+              ],
+              defaultReasoningEffort: "medium",
+              inputModalities: ["text"],
+              supportsPersonality: true,
+              isDefault: true
             }
-          ]
+          ],
+          nextCursor: null
         })
       } as Response;
     }
@@ -127,11 +200,7 @@ vi.stubGlobal(
     if (url.includes("/api/agents")) {
       return {
         ok: true,
-        json: async () => ({
-          ok: true,
-          agents: [{ kind: "codex", enabled: true }],
-          defaultAgent: "codex"
-        })
+        json: async () => agentsFixture
       } as Response;
     }
 
@@ -151,7 +220,33 @@ vi.stubGlobal(
 describe("App", () => {
   it("renders core sections", async () => {
     render(<App />);
-    expect(await screen.findByText("Farfield")).toBeTruthy();
+    expect((await screen.findAllByText("Farfield")).length).toBeGreaterThan(0);
     expect(await screen.findByText("No thread selected")).toBeTruthy();
+  });
+
+  it("hides mode controls when capability is disabled", async () => {
+    agentsFixture = {
+      ok: true,
+      agents: [
+        {
+          id: "opencode",
+          label: "OpenCode",
+          enabled: true,
+          connected: true,
+          capabilities: opencodeCapabilities,
+          projectDirectories: []
+        }
+      ],
+      defaultAgentId: "opencode"
+    };
+
+    render(<App />);
+    await screen.findAllByText("Farfield");
+    expect(screen.queryByText("Plan")).toBeNull();
+  });
+
+  it("shows mode controls when capability is enabled", async () => {
+    render(<App />);
+    expect(await screen.findByText("Plan")).toBeTruthy();
   });
 });

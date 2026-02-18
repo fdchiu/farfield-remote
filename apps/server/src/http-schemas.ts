@@ -1,4 +1,4 @@
-import { CollaborationModeSchema } from "@farfield/protocol";
+import { CollaborationModeSchema, UserInputResponsePayloadSchema } from "@farfield/protocol";
 import { z } from "zod";
 
 export const SetModeBodySchema = z
@@ -6,11 +6,11 @@ export const SetModeBodySchema = z
     ownerClientId: z.string().optional(),
     collaborationMode: CollaborationModeSchema
   })
-  .passthrough();
+  .strict();
 
 export const StartThreadBodySchema = z
   .object({
-    agentKind: z.enum(["codex", "opencode"]).optional(),
+    agentId: z.enum(["codex", "opencode"]).optional(),
     cwd: z.string().optional(),
     model: z.string().optional(),
     modelProvider: z.string().optional(),
@@ -19,7 +19,7 @@ export const StartThreadBodySchema = z
     approvalPolicy: z.string().optional(),
     ephemeral: z.boolean().optional()
   })
-  .passthrough();
+  .strict();
 
 export const SendMessageBodySchema = z
   .object({
@@ -28,40 +28,40 @@ export const SendMessageBodySchema = z
     cwd: z.string().optional(),
     isSteering: z.boolean().optional()
   })
-  .passthrough();
+  .strict();
 
 export const SubmitUserInputBodySchema = z
   .object({
     ownerClientId: z.string().optional(),
     requestId: z.number().int().nonnegative(),
-    response: z.unknown()
+    response: UserInputResponsePayloadSchema
   })
-  .passthrough();
+  .strict();
 
 export const InterruptBodySchema = z
   .object({
     ownerClientId: z.string().optional()
   })
-  .passthrough();
+  .strict();
 
 export const TraceStartBodySchema = z
   .object({
     label: z.string().min(1).max(120)
   })
-  .passthrough();
+  .strict();
 
 export const TraceMarkBodySchema = z
   .object({
     note: z.string().max(500)
   })
-  .passthrough();
+  .strict();
 
 export const ReplayBodySchema = z
   .object({
     entryId: z.string().min(1),
     waitForResponse: z.boolean().optional()
   })
-  .passthrough();
+  .strict();
 
 export function parseBody<Schema extends z.ZodTypeAny>(
   schema: Schema,

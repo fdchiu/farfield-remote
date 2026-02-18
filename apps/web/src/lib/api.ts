@@ -65,7 +65,7 @@ const CreateThreadResponseSchema = z
   .object({
     ok: z.literal(true),
     threadId: z.string(),
-    agentKind: z.enum(["codex", "opencode"]).optional()
+    agentId: z.enum(["codex", "opencode"])
   })
   .merge(AppServerStartThreadResponseSchema)
   .passthrough();
@@ -145,19 +145,34 @@ export async function getHealth(): Promise<z.infer<typeof HealthResponseSchema>>
   return HealthResponseSchema.parse(await request("/api/health"));
 }
 
-const AgentKindSchema = z.enum(["codex", "opencode"]);
-export type AgentKind = z.infer<typeof AgentKindSchema>;
+const AgentIdSchema = z.enum(["codex", "opencode"]);
+export type AgentId = z.infer<typeof AgentIdSchema>;
+
+const AgentCapabilitiesSchema = z
+  .object({
+    canListModels: z.boolean(),
+    canListCollaborationModes: z.boolean(),
+    canSetCollaborationMode: z.boolean(),
+    canSubmitUserInput: z.boolean(),
+    canReadLiveState: z.boolean(),
+    canReadStreamEvents: z.boolean()
+  })
+  .strict();
 
 const AgentsResponseSchema = z
   .object({
     ok: z.literal(true),
     agents: z.array(
       z.object({
-        kind: AgentKindSchema,
-        enabled: z.boolean()
+        id: AgentIdSchema,
+        label: z.string(),
+        enabled: z.boolean(),
+        connected: z.boolean(),
+        capabilities: AgentCapabilitiesSchema,
+        projectDirectories: z.array(z.string())
       })
     ),
-    defaultAgent: AgentKindSchema
+    defaultAgentId: AgentIdSchema
   })
   .strict();
 
@@ -168,7 +183,7 @@ export async function listAgents(): Promise<z.infer<typeof AgentsResponseSchema>
 const ThreadListItemWithAgentSchema = AppServerListThreadsResponseSchema.shape.data.element
   .passthrough()
   .extend({
-    agentKind: z.enum(["codex", "opencode"]).optional(),
+    agentId: z.enum(["codex", "opencode"]),
     source: z.string().optional()
   });
 
@@ -176,7 +191,6 @@ const ThreadListResponseSchema = z
   .object({
     data: z.array(ThreadListItemWithAgentSchema),
     nextCursor: z.union([z.string(), z.null(), z.undefined()]).transform((v) => v ?? null),
-    opencodeDirectories: z.array(z.string()).optional(),
     pages: z.number().int().nonnegative().optional(),
     truncated: z.boolean().optional()
   });
@@ -198,7 +212,7 @@ export async function listThreads(options: {
 }
 
 const ReadThreadResponseWithAgentSchema = AppServerReadThreadResponseSchema.extend({
-  agentKind: z.enum(["codex", "opencode"]).optional()
+  agentId: z.enum(["codex", "opencode"])
 });
 
 export async function readThread(
@@ -213,7 +227,7 @@ export async function readThread(
 }
 
 export async function createThread(input?: {
-  agentKind?: AgentKind;
+  agentId?: AgentId;
   cwd?: string;
   model?: string;
   modelProvider?: string;

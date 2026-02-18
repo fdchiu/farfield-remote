@@ -3,6 +3,7 @@ import {
   parseBody,
   ReplayBodySchema,
   SendMessageBodySchema,
+  StartThreadBodySchema,
   SetModeBodySchema,
   SubmitUserInputBodySchema
 } from "../src/http-schemas.js";
@@ -57,5 +58,22 @@ describe("server request schemas", () => {
     });
 
     expect(parsed.waitForResponse).toBe(true);
+  });
+
+  it("validates start thread body with agentId", () => {
+    const parsed = parseBody(StartThreadBodySchema, {
+      agentId: "opencode",
+      cwd: "/tmp/workspace"
+    });
+
+    expect(parsed.agentId).toBe("opencode");
+  });
+
+  it("rejects deprecated agentKind field", () => {
+    expect(() =>
+      parseBody(StartThreadBodySchema, {
+        agentKind: "opencode"
+      })
+    ).toThrowError(/Unrecognized key/);
   });
 });

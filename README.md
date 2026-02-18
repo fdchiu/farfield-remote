@@ -14,7 +14,7 @@ This is an independent project and is not affiliated with, endorsed by, or spons
 
 Farfield connects to the Codex desktop app over its local IPC socket and app-server API, then exposes a polished web UI at `localhost:4312`. You get:
 
-- **Thread browser** — sidebar grouped by project with all your active Codex threads
+- **Thread browser** — sidebar grouped by project with active threads across enabled agents
 - **Chat view** — read and send messages, switch collaboration mode, model, and reasoning effort
 - **Plan mode toggle** — flip Codex into plan mode for any thread
 - **Agent monitoring** — live stream events, pending user input requests, and interrupt controls
@@ -24,7 +24,8 @@ Farfield connects to the Codex desktop app over its local IPC socket and app-ser
 
 - Node.js 20+
 - pnpm 10+
-- Codex desktop app installed and running locally
+- Codex desktop app installed and running locally (required when `codex` is enabled)
+- OpenCode available locally (required when `opencode` is enabled)
 
 ## Install
 
@@ -38,27 +39,30 @@ pnpm install
 pnpm dev
 ```
 
-That's it. Both the backend and frontend start in parallel.
-
+Default behavior:
 - Backend: `http://127.0.0.1:4311`
-- Frontend: `http://127.0.0.1:4312` — open this in your browser
+- Frontend: `http://127.0.0.1:4312`
+- Enabled agents: `codex`
+
+Agent flag matrix:
+
+```bash
+pnpm dev                                  # codex only (default)
+pnpm dev -- --agents=opencode             # opencode only
+pnpm dev -- --agents=codex,opencode       # both; codex is default
+pnpm dev -- --agents=all                  # expands to codex,opencode
+pnpm dev:remote                           # remote bind, codex default
+pnpm dev -- --remote --agents=opencode    # remote bind + custom agents
+```
 
 The frontend proxies `/api` and `/events` to the backend automatically.
 
-## Run with OpenCode only
+### Agent selection rules
 
-```bash
-pnpm dev -- --opencode
-```
-
-You can also use aliases:
-
-```bash
-pnpm dev:opencode
-pnpm dev:opencode:remote
-```
-
-Farfield will load OpenCode sessions across all known OpenCode project directories and show them in the sidebar.
+- If `--agents` is omitted, Farfield enables `codex`.
+- When multiple agents are enabled, the first id in `--agents` is the default agent.
+- `all` expands to `codex,opencode`.
+- Unknown ids fail fast with a clear error.
 
 ## Make it available remotely
 
@@ -95,14 +99,16 @@ apps/
   server/       HTTP + SSE backend (TypeScript)
   web/          React frontend (Vite + Tailwind)
 packages/
-  protocol/     Zod schemas and inferred types for all wire formats
-  api/          Typed clients for the Codex app-server and desktop IPC
+  codex-protocol/  Zod schemas and inferred types for all wire formats
+  codex-api/       Typed clients for the Codex app-server and desktop IPC
+  opencode-api/    Typed OpenCode SDK adapter layer
 scripts/
   sanitize-traces.mjs   Redact trace files for safe fixture use
 ```
 
-- **`packages/protocol`** is the single source of truth for all data shapes. Everything is Zod — no silent coercion, no shape drift, hard failures on unknown payloads.
-- **`packages/api`** wraps the Codex IPC socket and app-server HTTP API with typed clients and a high-level service layer.
+- **`packages/codex-protocol`** is the single source of truth for all data shapes. Everything is Zod with hard failures on mismatch.
+- **`packages/codex-api`** wraps the Codex IPC socket and app-server HTTP API with typed clients and a high-level service layer.
+- **`packages/opencode-api`** wraps OpenCode SDK operations with typed mappers used by the server adapter.
 - **`apps/server`** serves the REST and SSE endpoints the UI depends on, and manages the IPC connection lifecycle.
 - **`apps/web`** is a Vite + React + Tailwind app. No heavy framework.
 
@@ -114,7 +120,7 @@ The Debug tab lets you record IPC traffic as trace files. Raw traces go in `trac
 pnpm sanitize:traces
 ```
 
-Sanitized files land in `packages/protocol/test/fixtures/sanitized/`.
+Sanitized files land in `packages/codex-protocol/test/fixtures/sanitized/`.
 
 ## License
 

@@ -46,7 +46,7 @@ import {
   startTrace,
   stopTrace,
   submitUserInput,
-  type AgentKind
+  type AgentId
 } from "@/lib/api";
 import { useTheme } from "@/hooks/useTheme";
 import { ConversationItem } from "@/components/ConversationItem";
@@ -79,11 +79,13 @@ type ModelsResponse = Awaited<ReturnType<typeof listModels>>;
 type LiveStateResponse = Awaited<ReturnType<typeof getLiveState>>;
 type StreamEventsResponse = Awaited<ReturnType<typeof getStreamEvents>>;
 type ReadThreadResponse = Awaited<ReturnType<typeof readThread>>;
+type AgentsResponse = Awaited<ReturnType<typeof listAgents>>;
 type TraceStatus = Awaited<ReturnType<typeof getTraceStatus>>;
 type HistoryResponse = Awaited<ReturnType<typeof listDebugHistory>>;
 type HistoryDetail = Awaited<ReturnType<typeof getHistoryEntry>>;
 type PendingRequest = ReturnType<typeof getPendingUserInputRequests>[number];
 type Thread = ThreadsResponse["data"][number];
+type AgentDescriptor = AgentsResponse["agents"][number];
 
 /* ── Helpers ────────────────────────────────────────────────── */
 function formatDate(value: number | string | null | undefined): string {
@@ -338,13 +340,8 @@ export function App(): React.JSX.Element {
   const [waitForReplayResponse, setWaitForReplayResponse] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null);
   const [answerDraft, setAnswerDraft] = useState<Record<string, { option: string; freeform: string }>>({});
-  const [availableAgents, setAvailableAgents] = useState<AgentKind[]>(["codex"]);
-  const [openCodeDirectories, setOpenCodeDirectories] = useState<string[]>([]);
-  const [agentStatusByKind, setAgentStatusByKind] = useState<Partial<Record<AgentKind, boolean>>>({
-    codex: true
-  });
-  const [defaultAgent, setDefaultAgent] = useState<AgentKind>("codex");
-  const [selectedAgentKind, setSelectedAgentKind] = useState<AgentKind>("codex");
+  const [agentDescriptors, setAgentDescriptors] = useState<AgentDescriptor[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<AgentId>("codex");
 
   /* UI state */
   const [activeTab, setActiveTab] = useState<"chat" | "debug">(initialUiState.tab);
@@ -374,13 +371,30 @@ export function App(): React.JSX.Element {
     () => threads.find((t) => t.id === selectedThreadId) ?? null,
     [threads, selectedThreadId]
   );
+  const agentsById = useMemo(() => {
+    const map: Partial<Record<AgentId, AgentDescriptor>> = {};
+    for (const descriptor of agentDescriptors) {
+      map[descriptor.id] = descriptor;
+    }
+    return map;
+  }, [agentDescriptors]);
+  const availableAgentIds = useMemo(
+    () => agentDescriptors.filter((descriptor) => descriptor.enabled).map((descriptor) => descriptor.id),
+    [agentDescriptors]
+  );
+  const selectedAgentDescriptor = useMemo(
+    () => agentsById[selectedAgentId] ?? null,
+    [agentsById, selectedAgentId]
+  );
+  const selectedAgentLabel = selectedAgentDescriptor?.label ?? "Agent";
+  const selectedAgentCapabilities = selectedAgentDescriptor?.capabilities ?? null;
   const groupedThreads = useMemo(() => {
     type Group = {
       key: string;
       label: string;
       projectPath: string | null;
       latestUpdatedAt: number;
-      preferredAgentKind: AgentKind | null;
+      preferredAgentId: AgentId | null;
       threads: Thread[];
     };
     const groups = new Map<string, Group>();
@@ -392,13 +406,13 @@ export function App(): React.JSX.Element {
       const key = projectPath ? `project:${projectPath}` : "project:unknown";
       const label = projectPath ? basenameFromPath(projectPath) : "Unknown";
       const updatedAt = typeof thread.updatedAt === "number" ? thread.updatedAt : 0;
-      const threadAgentKind = thread.agentKind ?? "codex";
+      const threadAgentId = thread.agentId;
 
       const existing = groups.get(key);
       if (existing) {
         existing.threads.push(thread);
-        if (threadAgentKind === "opencode") {
-          existing.preferredAgentKind = "opencode";
+        if (!existing.preferredAgentId) {
+          existing.preferredAgentId = threadAgentId;
         }
         if (updatedAt > existing.latestUpdatedAt) {
           existing.latestUpdatedAt = updatedAt;
@@ -409,33 +423,35 @@ export function App(): React.JSX.Element {
           label,
           projectPath,
           latestUpdatedAt: updatedAt,
-          preferredAgentKind: threadAgentKind,
+          preferredAgentId: threadAgentId,
           threads: [thread]
         });
       }
     }
 
-    for (const directory of openCodeDirectories) {
-      const normalized = directory.trim();
-      if (!normalized) {
-        continue;
+    for (const descriptor of agentDescriptors) {
+      for (const directory of descriptor.projectDirectories) {
+        const normalized = directory.trim();
+        if (!normalized) {
+          continue;
+        }
+        const key = `project:${normalized}`;
+        if (groups.has(key)) {
+          continue;
+        }
+        groups.set(key, {
+          key,
+          label: basenameFromPath(normalized),
+          projectPath: normalized,
+          latestUpdatedAt: 0,
+          preferredAgentId: descriptor.id,
+          threads: []
+        });
       }
-      const key = `project:${normalized}`;
-      if (groups.has(key)) {
-        continue;
-      }
-      groups.set(key, {
-        key,
-        label: basenameFromPath(normalized),
-        projectPath: normalized,
-        latestUpdatedAt: 0,
-        preferredAgentKind: "opencode",
-        threads: []
-      });
     }
 
     return Array.from(groups.values()).sort((left, right) => right.latestUpdatedAt - left.latestUpdatedAt);
-  }, [openCodeDirectories, threads]);
+  }, [agentDescriptors, selectedAgentId, threads]);
   const conversationState = useMemo(() => {
     const liveConversationState = liveState?.conversationState ?? null;
     const readConversationState = readThreadState?.thread ?? null;
@@ -457,11 +473,20 @@ export function App(): React.JSX.Element {
     return pendingRequests.find((r) => r.id === selectedRequestId) ?? pendingRequests[0];
   }, [pendingRequests, selectedRequestId]);
 
-  const activeThreadAgentKind: AgentKind = useMemo(() => {
-    const thread = selectedThread as (Thread & { agentKind?: AgentKind }) | null;
-    return thread?.agentKind ?? "codex";
-  }, [selectedThread]);
-  const isActiveThreadOpenCode = activeThreadAgentKind === "opencode";
+  const activeThreadAgentId: AgentId = useMemo(
+    () => selectedThread?.agentId ?? selectedAgentId,
+    [selectedAgentId, selectedThread]
+  );
+  const activeAgentDescriptor = useMemo(
+    () => agentsById[activeThreadAgentId] ?? selectedAgentDescriptor,
+    [activeThreadAgentId, agentsById, selectedAgentDescriptor]
+  );
+  const activeAgentLabel = activeAgentDescriptor?.label ?? selectedAgentLabel;
+  const activeAgentCapabilities = activeAgentDescriptor?.capabilities ?? selectedAgentCapabilities;
+  const canSetCollaborationMode = Boolean(activeAgentCapabilities?.canSetCollaborationMode);
+  const canListModels = Boolean(activeAgentCapabilities?.canListModels);
+  const canListCollaborationModes = Boolean(activeAgentCapabilities?.canListCollaborationModes);
+  const canSubmitUserInputForActiveAgent = Boolean(activeAgentCapabilities?.canSubmitUserInput);
 
   const planModeOption = useMemo(
     () => modes.find((mode) => isPlanModeOption(mode)) ?? null,
@@ -532,8 +557,8 @@ export function App(): React.JSX.Element {
   const lastTurn = turns[turns.length - 1];
   const isGenerating = lastTurn?.status === "in-progress";
   const commitLabel = health?.state.gitCommit ?? "unknown";
-  const codexConfigured = Object.prototype.hasOwnProperty.call(agentStatusByKind, "codex");
-  const openCodeConnected = agentStatusByKind.opencode === true;
+  const codexConfigured = agentsById.codex?.enabled === true;
+  const openCodeConnected = agentsById.opencode?.connected === true;
   const allSystemsReady = codexConfigured
     ? (
       health?.state.appReady === true &&
@@ -563,26 +588,19 @@ export function App(): React.JSX.Element {
     ]);
     setHealth(nh);
     setThreads(nt.data);
-    setOpenCodeDirectories([...(nt.opencodeDirectories ?? [])].sort((left, right) => left.localeCompare(right)));
     setModes(nm.data);
     setModels(nmo.data);
     setTraceStatus(ntr);
     setHistory(nhist.history);
-    let preferredAgentKind: AgentKind | null = null;
+    let preferredAgentId: AgentId | null = null;
     if (nag) {
-      const nextAgentStatus: Partial<Record<AgentKind, boolean>> = {};
-      for (const agent of nag.agents) {
-        nextAgentStatus[agent.kind] = agent.enabled;
-      }
-      setAgentStatusByKind(nextAgentStatus);
-      const enabledAgents = nag.agents.filter((a) => a.enabled).map((a) => a.kind);
-      if (enabledAgents.length > 0) setAvailableAgents(enabledAgents);
-      setDefaultAgent(nag.defaultAgent);
-      const nextDefaultAgent = enabledAgents.includes(nag.defaultAgent)
-        ? nag.defaultAgent
-        : (enabledAgents[0] ?? nag.defaultAgent);
-      preferredAgentKind = nextDefaultAgent;
-      setSelectedAgentKind((cur) => {
+      setAgentDescriptors(nag.agents);
+      const enabledAgents = nag.agents.filter((agent) => agent.enabled).map((agent) => agent.id);
+      const nextDefaultAgent = enabledAgents.includes(nag.defaultAgentId)
+        ? nag.defaultAgentId
+        : (enabledAgents[0] ?? nag.defaultAgentId);
+      preferredAgentId = nextDefaultAgent;
+      setSelectedAgentId((cur) => {
         if (!hasHydratedAgentSelectionRef.current) {
           hasHydratedAgentSelectionRef.current = true;
           return nextDefaultAgent;
@@ -592,8 +610,8 @@ export function App(): React.JSX.Element {
     }
     setSelectedThreadId((cur) => {
       if (cur) return cur;
-      if (preferredAgentKind) {
-        const preferredThread = nt.data.find((thread) => thread.agentKind === preferredAgentKind);
+      if (preferredAgentId) {
+        const preferredThread = nt.data.find((thread) => thread.agentId === preferredAgentId);
         if (preferredThread) {
           return preferredThread.id;
         }
@@ -609,9 +627,29 @@ export function App(): React.JSX.Element {
 
   const loadSelectedThread = useCallback(async (threadId: string) => {
     const includeTurns = !pendingMaterializationThreadIdsRef.current.has(threadId);
+    const thread = threads.find((entry) => entry.id === threadId) ?? null;
+    const threadAgentId = thread?.agentId ?? selectedAgentId;
+    const descriptor = agentsById[threadAgentId];
+    const canReadLiveState = descriptor?.capabilities.canReadLiveState ?? (threadAgentId === "codex");
+    const canReadStreamEvents = descriptor?.capabilities.canReadStreamEvents ?? (threadAgentId === "codex");
+
     const [live, stream, read] = await Promise.all([
-      getLiveState(threadId),
-      getStreamEvents(threadId),
+      canReadLiveState
+        ? getLiveState(threadId)
+        : Promise.resolve({
+            ok: true as const,
+            threadId,
+            ownerClientId: null,
+            conversationState: null
+          }),
+      canReadStreamEvents
+        ? getStreamEvents(threadId)
+        : Promise.resolve({
+            ok: true as const,
+            threadId,
+            ownerClientId: null,
+            events: []
+          }),
       readThread(threadId, { includeTurns })
     ]);
     if ((live.conversationState?.turns.length ?? 0) > 0 || read.thread.turns.length > 0) {
@@ -620,7 +658,7 @@ export function App(): React.JSX.Element {
     setLiveState(live);
     setReadThreadState(read);
     setStreamEvents(stream.events);
-  }, []);
+  }, [agentsById, selectedAgentId, threads]);
 
   const loadLiveData = useCallback(async () => {
     const [nh, nhist] = await Promise.all([getHealth(), listDebugHistory(120)]);
@@ -858,7 +896,7 @@ export function App(): React.JSX.Element {
       // Auto-create a thread if none is selected.
       if (!threadId) {
         const created = await createThread({
-          agentKind: selectedAgentKind
+          agentId: selectedAgentId
         });
         threadId = created.threadId;
         pendingMaterializationThreadIdsRef.current.add(threadId);
@@ -874,7 +912,7 @@ export function App(): React.JSX.Element {
     } finally {
       setIsBusy(false);
     }
-  }, [refreshAll, selectedAgentKind, selectedThreadId]);
+  }, [refreshAll, selectedAgentId, selectedThreadId]);
 
   const applyModeDraft = useCallback(async (draft: {
     modeKey: string;
@@ -996,7 +1034,7 @@ export function App(): React.JSX.Element {
     []
   );
 
-  const createNewThread = useCallback(async (projectPath: string, agentKind?: AgentKind) => {
+  const createNewThread = useCallback(async (projectPath: string, agentId?: AgentId) => {
     const trimmedProjectPath = projectPath.trim();
     if (!trimmedProjectPath) {
       setError("Cannot create thread: missing project path");
@@ -1007,7 +1045,7 @@ export function App(): React.JSX.Element {
       setError("");
       const created = await createThread({
         cwd: trimmedProjectPath,
-        ...(agentKind ? { agentKind } : {})
+        ...(agentId ? { agentId } : {})
       });
       pendingMaterializationThreadIdsRef.current.add(created.threadId);
       setSelectedThreadId(created.threadId);
@@ -1056,7 +1094,7 @@ export function App(): React.JSX.Element {
           {threads.length === 0 && (
             <div className="px-4 py-6 text-xs text-muted-foreground text-center space-y-3">
               <div>No threads</div>
-              {availableAgents.length > 0 && (
+              {availableAgentIds.length > 0 && (
                 <Button
                   type="button"
                   variant="outline"
@@ -1064,14 +1102,12 @@ export function App(): React.JSX.Element {
                   className="rounded-full"
                   disabled={isBusy}
                   onClick={() => {
-                    const defaultProjectPath = selectedAgentKind === "opencode"
-                      ? (openCodeDirectories[0] ?? ".")
-                      : ".";
-                    void createNewThread(defaultProjectPath, selectedAgentKind);
+                    const defaultProjectPath = selectedAgentDescriptor?.projectDirectories[0] ?? ".";
+                    void createNewThread(defaultProjectPath, selectedAgentId);
                   }}
                 >
                   <Plus size={13} className="mr-1.5" />
-                  New {selectedAgentKind === "opencode" ? "OpenCode" : "Codex"} thread
+                  New {selectedAgentLabel} thread
                 </Button>
               )}
             </div>
@@ -1080,7 +1116,8 @@ export function App(): React.JSX.Element {
             {groupedThreads.map((group) => {
               const hasSelectedThread = group.threads.some((thread) => thread.id === selectedThreadId);
               const isCollapsed = hasSelectedThread ? false : Boolean(sidebarCollapsedGroups[group.key]);
-              const nextAgentKind = group.preferredAgentKind ?? selectedAgentKind;
+              const nextAgentId = group.preferredAgentId ?? selectedAgentId;
+              const nextAgentLabel = agentsById[nextAgentId]?.label ?? nextAgentId;
               return (
                 <div key={group.key} className="space-y-1">
                   <div className="flex items-center gap-1">
@@ -1107,11 +1144,11 @@ export function App(): React.JSX.Element {
                         if (!group.projectPath) {
                           return;
                         }
-                        void createNewThread(group.projectPath, nextAgentKind);
+                        void createNewThread(group.projectPath, nextAgentId);
                       }}
                       title={
                         group.projectPath
-                          ? `New ${nextAgentKind} thread in ${group.label}`
+                          ? `New ${nextAgentLabel} thread in ${group.label}`
                           : "Cannot create thread: missing project path"
                       }
                       disabled={isBusy || !group.projectPath}
@@ -1152,9 +1189,9 @@ export function App(): React.JSX.Element {
                                 }`}
                               >
                                 <span className="min-w-0 flex-1 flex items-center gap-1.5 truncate leading-5">
-                                  {(thread as Thread & { agentKind?: string }).agentKind === "opencode" && (
+                                  {thread.agentId && (
                                     <span className="shrink-0 text-[9px] px-1 py-0 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium leading-4">
-                                      OC
+                                      {agentsById[thread.agentId]?.label ?? "Agent"}
                                     </span>
                                   )}
                                   <span className="truncate">{threadLabel(thread)}</span>
@@ -1201,15 +1238,20 @@ export function App(): React.JSX.Element {
             </TooltipTrigger>
             <TooltipContent side="top" align="start" className="space-y-1 text-xs">
               <div className="font-mono text-[11px]">commit {commitLabel}</div>
+              {agentDescriptors
+                .filter((descriptor) => descriptor.enabled)
+                .map((descriptor) => (
+                  <div key={descriptor.id}>
+                    {descriptor.label}: {descriptor.connected ? "connected" : "disconnected"}
+                  </div>
+                ))}
               {codexConfigured ? (
                 <>
                   <div>App: {health?.state.appReady ? "ok" : "not ready"}</div>
                   <div>IPC: {health?.state.ipcConnected ? "connected" : "disconnected"}</div>
                   <div>Init: {health?.state.ipcInitialized ? "ready" : "not ready"}</div>
                 </>
-              ) : (
-                <div>OpenCode: {openCodeConnected ? "connected" : "disconnected"}</div>
-              )}
+              ) : null}
               {health?.state.lastError && (
                 <div className="max-w-64 break-words text-destructive">
                   Error: {health.state.lastError}
@@ -1317,9 +1359,9 @@ export function App(): React.JSX.Element {
             <div className="min-w-0">
               <div className="text-sm font-medium truncate leading-5 flex items-center gap-1.5">
                 {selectedThread ? threadLabel(selectedThread) : "No thread selected"}
-                {selectedThread && isActiveThreadOpenCode && (
+                {selectedThread && activeAgentLabel && (
                   <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium leading-3">
-                    OpenCode
+                    {activeAgentLabel}
                   </span>
                 )}
               </div>
@@ -1402,7 +1444,7 @@ export function App(): React.JSX.Element {
                     <div className="text-center py-20 text-sm text-muted-foreground">
                       {selectedThreadId
                         ? "No messages yet"
-                        : availableAgents.length > 0
+                        : availableAgentIds.length > 0
                           ? "Start typing to create a new thread"
                           : "Select a thread from the sidebar"}
                     </div>
@@ -1493,9 +1535,9 @@ export function App(): React.JSX.Element {
               />
               <div className="relative max-w-3xl mx-auto space-y-2">
 
-                {/* Pending user input (Codex only) */}
+                {/* Pending user input */}
                 <AnimatePresence>
-                  {activeRequest && !isActiveThreadOpenCode && (
+                  {activeRequest && canSubmitUserInputForActiveAgent && (
                     <PendingRequestCard
                       request={activeRequest}
                       answerDraft={answerDraft}
@@ -1510,13 +1552,13 @@ export function App(): React.JSX.Element {
                 {/* Composer */}
                 <div className="flex flex-col gap-2">
                   <ChatComposer
-                    canSend={Boolean(selectedThreadId) || availableAgents.length > 0}
+                    canSend={Boolean(selectedThreadId) || availableAgentIds.length > 0}
                     isBusy={isBusy}
                     isGenerating={isGenerating}
                     placeholder={
                       selectedThreadId
-                        ? (isActiveThreadOpenCode ? "Message OpenCode…" : "Message Codex…")
-                        : (availableAgents.includes("opencode") ? "Message OpenCode…" : "Message Codex…")
+                        ? `Message ${activeAgentLabel}…`
+                        : `Message ${selectedAgentLabel}…`
                     }
                     onInterrupt={runInterrupt}
                     onSend={submitMessage}
@@ -1524,24 +1566,24 @@ export function App(): React.JSX.Element {
 
                   {/* Toolbar */}
                   <div className="flex items-center gap-1 min-w-0 overflow-x-auto overflow-y-hidden whitespace-nowrap">
-                    {availableAgents.length > 1 && (
+                    {availableAgentIds.length > 1 && (
                       <Select
-                        value={selectedAgentKind}
-                        onValueChange={(value) => setSelectedAgentKind(value as AgentKind)}
+                        value={selectedAgentId}
+                        onValueChange={(value) => setSelectedAgentId(value as AgentId)}
                       >
                         <SelectTrigger className="h-8 w-[100px] shrink-0 rounded-full border-0 bg-transparent dark:bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:text-foreground focus-visible:ring-0">
                           <SelectValue placeholder="Agent" />
                         </SelectTrigger>
                         <SelectContent position="popper">
-                          {availableAgents.map((kind) => (
-                            <SelectItem key={kind} value={kind}>
-                              {kind === "codex" ? "Codex" : "OpenCode"}
+                          {availableAgentIds.map((agentId) => (
+                            <SelectItem key={agentId} value={agentId}>
+                              {agentsById[agentId]?.label ?? agentId}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     )}
-                    {!isActiveThreadOpenCode && (
+                    {canSetCollaborationMode && canListCollaborationModes && (
                       <Button
                         type="button"
                         onClick={() => {
@@ -1570,7 +1612,7 @@ export function App(): React.JSX.Element {
                         Plan
                       </Button>
                     )}
-                    {!isActiveThreadOpenCode && (
+                    {canSetCollaborationMode && canListModels && (
                       <Select
                         value={selectedModelId || APP_DEFAULT_VALUE}
                         onValueChange={(value) => {
@@ -1597,7 +1639,7 @@ export function App(): React.JSX.Element {
                         </SelectContent>
                       </Select>
                     )}
-                    {!isActiveThreadOpenCode && (
+                    {canSetCollaborationMode && canListCollaborationModes && (
                       <Select
                         value={selectedReasoningEffort || APP_DEFAULT_VALUE}
                         onValueChange={(value) => {
@@ -1624,7 +1666,7 @@ export function App(): React.JSX.Element {
                         </SelectContent>
                       </Select>
                     )}
-                    {!isActiveThreadOpenCode && (
+                    {canSetCollaborationMode && (
                       <span
                         className={`inline-flex w-3 items-center justify-center text-xs text-muted-foreground transition-opacity ${
                           isModeSyncing ? "opacity-100" : "opacity-0"
