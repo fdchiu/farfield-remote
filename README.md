@@ -4,7 +4,9 @@ A local UI for the [Codex](https://openai.com/codex) app — read your conversat
 
 Built by [@anshuchimala](https://x.com/anshuchimala).
 
-This is an independent project and is not affiliated with, endorsed by, or sponsored by OpenAI.
+This is an independent project and is not affiliated with, endorsed by, or sponsored by OpenAI. I'm just an indie dev who likes to build with AI!
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/achimalap)
 
 <img src="./screenshot.png" alt="Farfield screenshot" width="500" />
 
