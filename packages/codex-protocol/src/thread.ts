@@ -136,7 +136,7 @@ export const UserInputResponseItemSchema = z
     turnId: NonEmptyStringSchema,
     questions: z.array(UserInputAnsweredQuestionSchema),
     answers: z.record(z.array(z.string())),
-    completed: z.boolean()
+    completed: z.boolean().optional()
   })
   .passthrough();
 
@@ -193,7 +193,7 @@ export const ContextCompactionItemSchema = z
   .object({
     type: z.literal("contextCompaction"),
     id: NonEmptyStringSchema,
-    completed: z.boolean()
+    completed: z.boolean().optional()
   })
   .passthrough();
 

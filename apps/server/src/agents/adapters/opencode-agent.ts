@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { OpenCodeConnection, OpenCodeMonitorService } from "@farfield/opencode-api";
-import { parseThreadConversationState } from "@farfield/protocol";
+import {
+  AppServerThreadListItemSchema,
+  parseThreadConversationState
+} from "@farfield/protocol";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -92,8 +95,12 @@ export class OpenCodeAgentAdapter implements AgentAdapter {
       }
     }
 
+    const mappedData = Array.from(sessions.values()).map((session) =>
+      AppServerThreadListItemSchema.parse(session)
+    );
+
     return {
-      data: Array.from(sessions.values()),
+      data: mappedData,
       nextCursor: null
     };
   }
@@ -113,10 +120,12 @@ export class OpenCodeAgentAdapter implements AgentAdapter {
       this.threadDirectoryById.set(result.threadId, directory);
     }
 
+    const mappedThread = AppServerThreadListItemSchema.parse(result.mapped);
+
     return {
       threadId: result.threadId,
-      thread: result.mapped,
-      cwd: result.mapped.cwd
+      thread: mappedThread,
+      cwd: mappedThread.cwd
     };
   }
 

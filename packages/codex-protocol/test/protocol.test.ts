@@ -161,6 +161,30 @@ describe("codex-protocol schemas", () => {
     expect(parsed.turns[0]?.items[0]?.type).toBe("userInputResponse");
   });
 
+  it("parses userInputResponse item when completed is omitted", () => {
+    const parsed = parseThreadConversationState({
+      id: "thread-123",
+      turns: [
+        {
+          status: "completed",
+          items: [
+            {
+              id: "item-1",
+              type: "userInputResponse",
+              requestId: 12,
+              turnId: "turn-1",
+              questions: [{ id: "q", header: "H", question: "Q" }],
+              answers: { q: ["A"] }
+            }
+          ]
+        }
+      ],
+      requests: []
+    });
+
+    expect(parsed.turns[0]?.items[0]?.type).toBe("userInputResponse");
+  });
+
   it("parses thread conversation state with mixed text and image user content", () => {
     const parsed = parseThreadConversationState({
       id: "thread-123",
@@ -367,6 +391,26 @@ describe("codex-protocol schemas", () => {
 
     expect(parsed.turns[0]?.items[0]?.type).toBe("contextCompaction");
     expect(parsed.turns[0]?.items[1]?.type).toBe("webSearch");
+  });
+
+  it("parses contextCompaction item when completed is omitted", () => {
+    const parsed = parseThreadConversationState({
+      id: "thread-123",
+      turns: [
+        {
+          status: "completed",
+          items: [
+            {
+              id: "item-compact",
+              type: "contextCompaction"
+            }
+          ]
+        }
+      ],
+      requests: []
+    });
+
+    expect(parsed.turns[0]?.items[0]?.type).toBe("contextCompaction");
   });
 
   it("parses thread conversation state with modelChanged item", () => {
