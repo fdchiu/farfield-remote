@@ -304,6 +304,42 @@ function readModeSelectionFromConversationState(state: NonNullable<ReadThreadRes
   };
 }
 
+function modeSelectionSignatureFromConversationState(
+  state: NonNullable<ReadThreadResponse["thread"]> | null | undefined
+): string {
+  const selection = readModeSelectionFromConversationState(state ?? null);
+  return buildModeSignature(selection.modeKey, selection.modelId, selection.reasoningEffort);
+}
+
+function buildLiveStateSyncSignature(state: LiveStateResponse | null | undefined): string {
+  if (!state) {
+    return "";
+  }
+
+  const conversationState = state.conversationState;
+  return [
+    state.threadId,
+    state.ownerClientId ?? "",
+    String(getConversationStateUpdatedAt(conversationState)),
+    String(conversationState?.turns.length ?? -1),
+    modeSelectionSignatureFromConversationState(conversationState)
+  ].join("|");
+}
+
+function buildReadThreadSyncSignature(state: ReadThreadResponse | null | undefined): string {
+  if (!state) {
+    return "";
+  }
+
+  const conversationState = state.thread;
+  return [
+    conversationState.id,
+    String(getConversationStateUpdatedAt(conversationState)),
+    String(conversationState.turns.length),
+    modeSelectionSignatureFromConversationState(conversationState)
+  ].join("|");
+}
+
 function basenameFromPath(value: string): string {
   const normalized = value.replaceAll("\\", "/").replace(/\/+$/, "");
   if (!normalized) {
@@ -879,24 +915,13 @@ export function App(): React.JSX.Element {
     }
     startTransition(() => {
       setLiveState((prev) => {
-        if (
-          prev &&
-          prev.threadId === live.threadId &&
-          prev.ownerClientId === live.ownerClientId &&
-          getConversationStateUpdatedAt(prev.conversationState) ===
-            getConversationStateUpdatedAt(live.conversationState)
-        ) {
+        if (buildLiveStateSyncSignature(prev) === buildLiveStateSyncSignature(live)) {
           return prev;
         }
         return live;
       });
       setReadThreadState((prev) => {
-        if (
-          prev &&
-          prev.thread.id === read.thread.id &&
-          prev.thread.updatedAt === read.thread.updatedAt &&
-          prev.thread.turns.length === read.thread.turns.length
-        ) {
+        if (buildReadThreadSyncSignature(prev) === buildReadThreadSyncSignature(read)) {
           return prev;
         }
         return read;
@@ -1105,6 +1130,14 @@ export function App(): React.JSX.Element {
       if (isModeSyncing) {
         setIsModeSyncing(false);
       }
+      return;
+    }
+
+    if (
+      isModeSyncing &&
+      localSignature === lastAppliedModeSignatureRef.current &&
+      remoteSignature !== lastAppliedModeSignatureRef.current
+    ) {
       return;
     }
 
