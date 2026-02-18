@@ -41,6 +41,7 @@ const PORT = Number(process.env["PORT"] ?? 4311);
 const HISTORY_LIMIT = 2_000;
 const USER_AGENT = "codex-monitor-web/0.2.0";
 const IPC_RECONNECT_DELAY_MS = 1_000;
+const ANSI_ESCAPE_REGEX = /\u001B\[[0-?]*[ -/]*[@-~]/g;
 
 const TRACE_DIR = path.resolve(process.cwd(), "traces");
 const DEFAULT_WORKSPACE = path.resolve(process.cwd());
@@ -126,6 +127,18 @@ function toErrorMessage(error: unknown): string {
     return error;
   }
   return String(error);
+}
+
+function normalizeStderrLine(line: string): string {
+  return line.replace(ANSI_ESCAPE_REGEX, "").trim();
+}
+
+function isKnownBenignAppServerStderr(line: string): boolean {
+  const normalized = normalizeStderrLine(line);
+  return (
+    normalized.includes("codex_core::rollout::list") &&
+    normalized.includes("state db missing rollout path for thread")
+  );
 }
 
 interface HistoryEntry {
@@ -380,10 +393,16 @@ const appClient = new AppServerClient({
   userAgent: USER_AGENT,
   cwd: DEFAULT_WORKSPACE,
   onStderr: (line) => {
-    logger.error({ line }, "app-server-stderr");
+    const normalized = normalizeStderrLine(line);
+    if (isKnownBenignAppServerStderr(normalized)) {
+      logger.debug({ line: normalized }, "app-server-stderr-ignored");
+      return;
+    }
+
+    logger.error({ line: normalized }, "app-server-stderr");
     pushHistory("app", "system", {
       type: "stderr",
-      line
+      line: normalized
     });
   }
 });

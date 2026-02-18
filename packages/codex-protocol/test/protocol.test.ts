@@ -368,6 +368,28 @@ describe("codex-protocol schemas", () => {
     expect(parsed.turns[0]?.items[1]?.type).toBe("webSearch");
   });
 
+  it("parses thread conversation state with modelChanged item", () => {
+    const parsed = parseThreadConversationState({
+      id: "thread-123",
+      turns: [
+        {
+          status: "completed",
+          items: [
+            {
+              id: "item-model",
+              type: "modelChanged",
+              fromModel: "gpt-5.3-codex-spark",
+              toModel: "gpt-5.3-codex"
+            }
+          ]
+        }
+      ],
+      requests: []
+    });
+
+    expect(parsed.turns[0]?.items[0]?.type).toBe("modelChanged");
+  });
+
   it("parses generic ipc request frames", () => {
     const parsed = parseIpcFrame({
       type: "request",

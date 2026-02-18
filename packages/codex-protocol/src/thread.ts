@@ -214,6 +214,15 @@ export const WebSearchItemSchema = z
   })
   .strict();
 
+export const ModelChangedItemSchema = z
+  .object({
+    type: z.literal("modelChanged"),
+    id: NonEmptyStringSchema,
+    fromModel: NullableStringSchema.optional(),
+    toModel: NullableStringSchema.optional()
+  })
+  .strict();
+
 export const TurnItemSchema = z.discriminatedUnion("type", [
   UserMessageItemSchema,
   SteeringUserMessageItemSchema,
@@ -224,7 +233,8 @@ export const TurnItemSchema = z.discriminatedUnion("type", [
   CommandExecutionItemSchema,
   FileChangeItemSchema,
   ContextCompactionItemSchema,
-  WebSearchItemSchema
+  WebSearchItemSchema,
+  ModelChangedItemSchema
 ]);
 
 export const UserInputOptionSchema = z
