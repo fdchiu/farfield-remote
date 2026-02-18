@@ -8,7 +8,7 @@ import {
   ThreadConversationStateSchema,
   UserInputRequestSchema,
   UserInputResponsePayloadSchema
-} from "@codex-monitor/codex-protocol";
+} from "@farfield/protocol";
 import { z } from "zod";
 
 const ApiEnvelopeSchema = z

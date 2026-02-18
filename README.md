@@ -1,41 +1,24 @@
-# Codex Monitor Workspace
+# Farfield
 
-A strict, fail-fast monitor for Codex desktop threads.
+A local UI for [Codex](https://openai.com/codex) desktop threads — read your conversations, send messages, switch models, and monitor agent activity, all from a clean web interface running on your machine.
 
-This repo is a `pnpm` monorepo with a typed protocol layer, a typed API layer,
-a TypeScript backend, and a React frontend.
+Built by [@anshuchimala](https://x.com/anshuchimala).
 
-## Principles
+## What it does
 
-- Validate every untrusted payload with Zod.
-- Fail fast on shape drift.
-- No silent fallback parsing.
-- No retry loops that hide protocol problems.
-- Keep UI thin and move protocol logic into shared packages.
+Farfield connects to the Codex desktop app over its local IPC socket and app-server API, then exposes a polished web UI at `localhost:4312`. You get:
 
-## Monorepo Layout
-
-- `packages/codex-protocol`
-  - Single source of truth for wire and app-server schemas.
-  - Exports inferred types and parse helpers.
-- `packages/codex-api`
-  - Typed app-server client.
-  - Typed desktop IPC client.
-  - High-level Codex monitor actions and stream reducers.
-- `apps/server`
-  - HTTP and SSE backend for the monitor UI.
-  - Trace capture, history inspection, and replay.
-- `apps/web`
-  - Vite + React + Tailwind + shadcn-style UI.
-  - Chat view + always-visible Debug tab.
-- `scripts/sanitize-traces.mjs`
-  - Redacts local trace files and emits sanitized fixtures for tests.
+- **Thread browser** — sidebar grouped by project with all your active Codex threads
+- **Chat view** — read and send messages, switch collaboration mode, model, and reasoning effort
+- **Plan mode toggle** — flip Codex into plan mode for any thread
+- **Agent monitoring** — live stream events, pending user input requests, and interrupt controls
+- **Debug tab** — full IPC history, payload inspection, and replay
 
 ## Requirements
 
 - Node.js 20+
 - pnpm 10+
-- Codex desktop app installed locally
+- Codex desktop app installed and running locally
 
 ## Install
 
@@ -43,101 +26,75 @@ a TypeScript backend, and a React frontend.
 pnpm install
 ```
 
-## Main Commands
+## Run
 
 ```bash
-# Build all packages and apps
-pnpm build
-
-# Run all tests
-pnpm test
-
-# Type/lint checks
-pnpm lint
-pnpm typecheck
-
-# Start server and web app in parallel
 pnpm dev
 ```
 
-## Run Apps Separately
+That's it. Both the backend and frontend start in parallel.
+
+- Backend: `http://127.0.0.1:4311`
+- Frontend: `http://127.0.0.1:4312` — open this in your browser
+
+The frontend proxies `/api` and `/events` to the backend automatically.
+
+## Make it available remotely
+
+To access Farfield from another machine (e.g. a phone or tablet on the same network), use `dev:remote`:
 
 ```bash
-# Backend server
-pnpm --filter @codex-monitor/server dev
-
-# Frontend web app
-pnpm --filter @codex-monitor/web dev
+pnpm dev:remote
 ```
 
-Default ports:
+This binds both the backend and frontend to `0.0.0.0` instead of `127.0.0.1`, making them reachable from any device on your local network via your machine's IP address.
 
-- backend: `http://127.0.0.1:4311`
-- frontend: `http://127.0.0.1:4312`
+> **Warning:** `dev:remote` exposes Farfield on your local network with no authentication. Only use it on trusted networks. You are responsible for securing access.
 
-The web app proxies `/api` and `/events` to the backend.
+## Other commands
 
-## Debug Workflow
+```bash
+pnpm build       # Build all packages
+pnpm test        # Run all tests
+pnpm typecheck   # TypeScript type checking across all packages
+pnpm lint        # Lint all packages
+```
 
-The Debug tab includes:
+Run a single app:
 
-- Trace controls (`start`, `mark`, `stop`)
-- Raw history feed
-- Captured payload detail
-- Replay action for captured outbound IPC entries
+```bash
+pnpm --filter @farfield/server dev
+pnpm --filter @farfield/web dev
+```
 
-Trace files are stored in local `traces/` and are ignored by git.
+## Project layout
 
-## Sanitized Trace Fixtures
+```
+apps/
+  server/       HTTP + SSE backend (TypeScript)
+  web/          React frontend (Vite + Tailwind)
+packages/
+  protocol/     Zod schemas and inferred types for all wire formats
+  api/          Typed clients for the Codex app-server and desktop IPC
+scripts/
+  sanitize-traces.mjs   Redact trace files for safe fixture use
+```
 
-Generate redacted fixtures from local traces:
+- **`packages/protocol`** is the single source of truth for all data shapes. Everything is Zod — no silent coercion, no shape drift, hard failures on unknown payloads.
+- **`packages/api`** wraps the Codex IPC socket and app-server HTTP API with typed clients and a high-level service layer.
+- **`apps/server`** serves the REST and SSE endpoints the UI depends on, and manages the IPC connection lifecycle.
+- **`apps/web`** is a Vite + React + Tailwind app. No heavy framework.
+
+## Trace capture (debug)
+
+The Debug tab lets you record IPC traffic as trace files. Raw traces go in `traces/` (git-ignored). To generate sanitized test fixtures:
 
 ```bash
 pnpm sanitize:traces
 ```
 
-This writes sanitized files into:
+Sanitized files land in `packages/protocol/test/fixtures/sanitized/`.
 
-- `packages/codex-protocol/test/fixtures/sanitized`
+## License
 
-Sanitization rules remove or replace:
-
-- user paths and usernames
-- conversation text content
-- IDs and client identifiers
-- sensitive long-form payload content
-
-## API Surface (Backend)
-
-Core routes:
-
-- `GET /api/health`
-- `GET /api/threads`
-- `GET /api/threads/:threadId`
-- `GET /api/threads/:threadId/live-state`
-- `GET /api/threads/:threadId/stream-events`
-- `GET /api/collaboration-modes`
-- `POST /api/threads/:threadId/messages`
-- `POST /api/threads/:threadId/collaboration-mode`
-- `POST /api/threads/:threadId/user-input`
-- `POST /api/threads/:threadId/interrupt`
-
-Debug routes:
-
-- `GET /api/debug/history`
-- `GET /api/debug/history/:id`
-- `POST /api/debug/replay`
-- `GET /api/debug/trace/status`
-- `POST /api/debug/trace/start`
-- `POST /api/debug/trace/mark`
-- `POST /api/debug/trace/stop`
-- `GET /api/debug/trace/:id/download`
-
-SSE route:
-
-- `GET /events`
-
-## Package Docs
-
-- Protocol details: `packages/codex-protocol/README.md`
-- API layer details: `packages/codex-api/README.md`
+MIT

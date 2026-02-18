@@ -10,7 +10,7 @@ import {
   type IpcFrame,
   type IpcResponseFrame,
   parseIpcFrame
-} from "@codex-monitor/codex-protocol";
+} from "@farfield/protocol";
 import { DesktopIpcError } from "./errors.js";
 
 interface PendingRequest {
@@ -312,7 +312,7 @@ export class DesktopIpcClient {
       version: 1,
       method: "initialize",
       params: {
-        clientType: "codex-monitor-web"
+        clientType: "farfield"
       }
     });
 

@@ -1,10 +1,10 @@
 {
-  "name": "codex-monitor-workspace",
+  "name": "farfield",
   "private": true,
   "packageManager": "pnpm@10.29.3",
   "scripts": {
-    "dev": "pnpm --filter @codex-monitor/codex-protocol build && pnpm --filter @codex-monitor/codex-api build && pnpm --parallel --filter @codex-monitor/server --filter @codex-monitor/web dev",
-    "dev:remote": "pnpm --filter @codex-monitor/codex-protocol build && pnpm --filter @codex-monitor/codex-api build && pnpm --parallel --filter @codex-monitor/server --filter @codex-monitor/web dev:remote",
+    "dev": "pnpm --filter @farfield/protocol build && pnpm --filter @farfield/api build && pnpm --parallel --filter @farfield/server --filter @farfield/web dev",
+    "dev:remote": "pnpm --filter @farfield/protocol build && pnpm --filter @farfield/api build && pnpm --parallel --filter @farfield/server --filter @farfield/web dev:remote",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",

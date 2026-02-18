@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseThreadStreamStateChangedBroadcast } from "@codex-monitor/codex-protocol";
+import { parseThreadStreamStateChangedBroadcast } from "@farfield/protocol";
 import { reduceThreadStreamEvents, ThreadStreamReductionError } from "../src/live-state.js";
 
 describe("live-state reducer", () => {

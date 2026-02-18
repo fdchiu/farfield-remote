@@ -1,6 +1,6 @@
-# @codex-monitor/codex-protocol
+# @farfield/protocol
 
-Strict schemas and types for Codex monitor protocol handling.
+Strict schemas and types for Farfield's Codex protocol handling.
 
 ## Goals
 
@@ -53,6 +53,6 @@ All helpers throw `ProtocolValidationError` with issue paths.
 ## Development
 
 ```bash
-pnpm --filter @codex-monitor/codex-protocol build
-pnpm --filter @codex-monitor/codex-protocol test
+pnpm --filter @farfield/protocol build
+pnpm --filter @farfield/protocol test
 ```

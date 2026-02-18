@@ -3,7 +3,7 @@ import {
   parseThreadConversationState,
   type ThreadStreamPatch,
   type ThreadStreamStateChangedBroadcast
-} from "@codex-monitor/codex-protocol";
+} from "@farfield/protocol";
 
 function cloneState<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;

@@ -1,4 +1,4 @@
-import { CollaborationModeSchema } from "@codex-monitor/codex-protocol";
+import { CollaborationModeSchema } from "@farfield/protocol";
 import { z } from "zod";
 
 export const SetModeBodySchema = z

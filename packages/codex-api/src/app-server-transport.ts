@@ -60,7 +60,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
         ...process.env,
         ...this.env,
         CODEX_USER_AGENT: this.userAgent,
-        CODEX_CLIENT_ID: `codex-monitor-${randomUUID()}`
+        CODEX_CLIENT_ID: `farfield-${randomUUID()}`
       },
       stdio: ["pipe", "pipe", "pipe"]
     });
@@ -213,7 +213,7 @@ export class ChildProcessAppServerTransport implements AppServerTransport {
         "initialize",
         {
           clientInfo: {
-            name: "codex-monitor",
+            name: "farfield",
             version: "0.2.0"
           },
           capabilities: {

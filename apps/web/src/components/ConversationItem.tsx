@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { TurnItemSchema } from "@codex-monitor/codex-protocol";
+import type { TurnItemSchema } from "@farfield/protocol";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { CommandBlock } from "./CommandBlock";
 import { DiffBlock } from "./DiffBlock";

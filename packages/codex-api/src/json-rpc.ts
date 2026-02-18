@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ProtocolValidationError } from "@codex-monitor/codex-protocol";
+import { ProtocolValidationError } from "@farfield/protocol";
 
 export const JsonRpcRequestSchema = z
   .object({

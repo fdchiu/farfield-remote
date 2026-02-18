@@ -13,6 +13,7 @@ import {
   CircleDot,
   Folder,
   FolderOpen,
+  Github,
   Loader2,
   Menu,
   Moon,
@@ -109,7 +110,7 @@ const VISIBLE_CHAT_ITEMS_STEP = 120;
 const APP_DEFAULT_VALUE = "__app_default__";
 const ASSUMED_APP_DEFAULT_MODEL = "gpt-5.3-codex";
 const ASSUMED_APP_DEFAULT_EFFORT = "medium";
-const SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY = "codex-monitor.sidebar.collapsed-groups.v1";
+const SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY = "farfield.sidebar.collapsed-groups.v1";
 
 function isPlanModeOption(mode: { mode: string; name: string }): boolean {
   return mode.mode.toLowerCase().includes("plan") || mode.name.toLowerCase().includes("plan");
@@ -926,10 +927,7 @@ export function App(): React.JSX.Element {
   const renderSidebarContent = (viewport: "desktop" | "mobile"): React.JSX.Element => (
     <>
       <div className="flex items-center justify-between px-4 h-14 border-b border-sidebar-border shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-md bg-foreground/90 shrink-0" />
-          <span className="text-sm font-semibold">Codex Monitor</span>
-        </div>
+        <span className="text-sm font-semibold">Farfield</span>
         <div className="flex items-center gap-1">
           {viewport === "desktop" && (
             <IconBtn onClick={() => setDesktopSidebarOpen(false)} title="Hide sidebar">
@@ -1042,10 +1040,10 @@ export function App(): React.JSX.Element {
         </div>
       </div>
 
-      <div className="p-3 border-t border-sidebar-border shrink-0">
+      <div className="p-3 border-t border-sidebar-border shrink-0 flex items-center justify-between gap-2">
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted/40 transition-colors cursor-default">
+            <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted/40 transition-colors cursor-default min-w-0">
               <span
                 className={`h-2 w-2 rounded-full shrink-0 ${
                   allSystemsReady
@@ -1055,7 +1053,7 @@ export function App(): React.JSX.Element {
                       : "bg-muted-foreground/40"
                 }`}
               />
-              <span className="font-mono">commit {commitLabel}</span>
+              <span className="font-mono truncate">commit {commitLabel}</span>
             </div>
           </TooltipTrigger>
           <TooltipContent side="top" align="start" className="space-y-1 text-xs">
@@ -1069,6 +1067,19 @@ export function App(): React.JSX.Element {
               </div>
             )}
           </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <a
+              href="https://github.com/achimala/farfield"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+            >
+              <Github size={14} />
+            </a>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="end">GitHub</TooltipContent>
         </Tooltip>
       </div>
     </>

@@ -12,8 +12,8 @@ import {
   type AppServerStartThreadResponse,
   AppServerStartThreadRequestSchema,
   AppServerStartThreadResponseSchema
-} from "@codex-monitor/codex-protocol";
-import { ProtocolValidationError } from "@codex-monitor/codex-protocol";
+} from "@farfield/protocol";
+import { ProtocolValidationError } from "@farfield/protocol";
 import { z } from "zod";
 import {
   AppServerTransport,

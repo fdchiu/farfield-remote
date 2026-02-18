@@ -1,5 +1,5 @@
 {
-  "name": "@codex-monitor/codex-api",
+  "name": "@farfield/api",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@codex-monitor/codex-protocol": "workspace:*",
+    "@farfield/protocol": "workspace:*",
     "zod": "^3.24.1"
   }
 }

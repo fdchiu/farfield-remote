@@ -12,7 +12,7 @@ import {
   FileSearch
 } from "lucide-react";
 import type { z } from "zod";
-import type { CommandExecutionItemSchema } from "@codex-monitor/codex-protocol";
+import type { CommandExecutionItemSchema } from "@farfield/protocol";
 import { Button } from "@/components/ui/button";
 import { CodeSnippet } from "./CodeSnippet";
 

@@ -3,7 +3,7 @@ import {
   type CollaborationMode,
   parseUserInputResponsePayload,
   type UserInputResponsePayload
-} from "@codex-monitor/codex-protocol";
+} from "@farfield/protocol";
 import type { DesktopIpcClient } from "./ipc-client.js";
 
 export interface SendMessageInput {

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This repo is a local Codex monitor workspace.
+This repo is Farfield — a local UI for Codex desktop threads.
 
 ## Absolutely Immutable Extremely Important Rules
 

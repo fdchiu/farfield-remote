@@ -3,8 +3,9 @@
     "allow": [
       "Bash(pnpm install:*)",
       "Bash(pnpm add:*)",
-      "Bash(pnpm --filter @codex-monitor/web typecheck:*)",
-      "Bash(pnpm --filter @codex-monitor/web build:*)"
+      "Bash(pnpm --filter @farfield/web typecheck:*)",
+      "Bash(pnpm --filter @farfield/web build:*)",
+      "Bash(python3:*)"
     ]
   }
 }

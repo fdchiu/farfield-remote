@@ -13,13 +13,13 @@ import {
   reduceThreadStreamEvents,
   ThreadStreamReductionError,
   type SendRequestOptions
-} from "@codex-monitor/codex-api";
+} from "@farfield/api";
 import {
   type CollaborationMode,
   type IpcFrame,
   parseThreadStreamStateChangedBroadcast,
   parseUserInputResponsePayload
-} from "@codex-monitor/codex-protocol";
+} from "@farfield/protocol";
 import {
   InterruptBodySchema,
   parseBody,
@@ -37,7 +37,7 @@ import { resolveOwnerClientId } from "./thread-owner.js";
 const HOST = process.env["HOST"] ?? "127.0.0.1";
 const PORT = Number(process.env["PORT"] ?? 4311);
 const HISTORY_LIMIT = 2_000;
-const USER_AGENT = "codex-monitor-web/0.2.0";
+const USER_AGENT = "farfield/0.2.0";
 const IPC_RECONNECT_DELAY_MS = 1_000;
 const ANSI_ESCAPE_REGEX = /\u001B\[[0-?]*[ -/]*[@-~]/g;
 

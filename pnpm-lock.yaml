@@ -23,10 +23,10 @@ importers:
 
   apps/server:
     dependencies:
-      '@codex-monitor/codex-api':
+      '@farfield/api':
         specifier: workspace:*
         version: link:../../packages/codex-api
-      '@codex-monitor/codex-protocol':
+      '@farfield/protocol':
         specifier: workspace:*
         version: link:../../packages/codex-protocol
       pino:
@@ -38,7 +38,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@codex-monitor/codex-protocol':
+      '@farfield/protocol':
         specifier: workspace:*
         version: link:../../packages/codex-protocol
       '@radix-ui/react-checkbox':
@@ -141,7 +141,7 @@ importers:
 
   packages/codex-api:
     dependencies:
-      '@codex-monitor/codex-protocol':
+      '@farfield/protocol':
         specifier: workspace:*
         version: link:../codex-protocol
       zod:
