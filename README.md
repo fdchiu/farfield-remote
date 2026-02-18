@@ -4,6 +4,8 @@ A local UI for the [Codex](https://openai.com/codex) app — read your conversat
 
 Built by [@anshuchimala](https://x.com/anshuchimala).
 
+This is an independent project and is not affiliated with, endorsed by, or sponsored by OpenAI.
+
 <img src="./screenshot.png" alt="Farfield screenshot" width="500" />
 
 ## What it does
