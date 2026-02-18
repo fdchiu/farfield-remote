@@ -8,12 +8,9 @@ import {
 import {
   Activity,
   ArrowDown,
-  ArrowUp,
   Bug,
   Circle,
   CircleDot,
-  ChevronRight,
-  CirclePause,
   Folder,
   FolderOpen,
   Loader2,
@@ -48,13 +45,13 @@ import {
 } from "@/lib/api";
 import { useTheme } from "@/hooks/useTheme";
 import { ConversationItem } from "@/components/ConversationItem";
-import { DiffBlock } from "@/components/DiffBlock";
+import { ChatComposer } from "@/components/ChatComposer";
+import { PendingRequestCard } from "@/components/PendingRequestCard";
+import { StreamEventCard } from "@/components/StreamEventCard";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -308,166 +305,6 @@ function IconBtn({
   );
 }
 
-/* ── Stream event renderer ──────────────────────────────────── */
-function StreamEventCard({ event }: { event: unknown }) {
-  const [open, setOpen] = useState(false);
-  if (typeof event !== "object" || event === null) {
-    return (
-      <div className="text-xs font-mono text-muted-foreground px-2 py-1.5 rounded-md border border-border">
-        {String(event)}
-      </div>
-    );
-  }
-  const e = event as Record<string, unknown>;
-  const method = typeof e["method"] === "string" ? e["method"] : null;
-  const type = typeof e["type"] === "string" ? e["type"] : null;
-  const label = method ?? type ?? "event";
-
-  const params = e["params"] as Record<string, unknown> | undefined;
-  const changes = params?.["changes"];
-  const isFileChange = Array.isArray(changes);
-
-  return (
-    <div className="rounded-lg border border-border overflow-hidden">
-      <Button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        variant="ghost"
-        className="h-auto w-full justify-start rounded-none bg-muted/30 px-2.5 py-1.5 text-left hover:bg-muted/60"
-      >
-        <ChevronRight
-          size={10}
-          className={`shrink-0 text-muted-foreground/60 transition-transform ${open ? "rotate-90" : ""}`}
-        />
-        <span className="font-mono text-[11px] text-muted-foreground truncate">{label}</span>
-      </Button>
-      {open && (
-        <div className="border-t border-border px-2.5 py-2">
-          {isFileChange ? (
-            <DiffBlock
-              changes={
-                changes as Array<{
-                  path: string;
-                  kind: { type: string; move_path?: string | null };
-                  diff?: string;
-                }>
-              }
-            />
-          ) : (
-            <pre className="font-mono text-[11px] text-muted-foreground/80 whitespace-pre-wrap break-words">
-              {JSON.stringify(event, null, 2)}
-            </pre>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Pending user input ─────────────────────────────────────── */
-function PendingRequestCard({
-  request,
-  answerDraft,
-  onDraftChange,
-  onSubmit,
-  onSkip,
-  isBusy
-}: {
-  request: PendingRequest;
-  answerDraft: Record<string, { option: string; freeform: string }>;
-  onDraftChange: (questionId: string, field: "option" | "freeform", value: string) => void;
-  onSubmit: () => void;
-  onSkip: () => void;
-  isBusy: boolean;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="rounded-xl border border-border bg-card p-4 space-y-3"
-    >
-      {request.params.questions.map((q) => {
-        const draft = answerDraft[q.id] ?? { option: "", freeform: "" };
-        return (
-          <div key={q.id} className="space-y-2">
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">
-              {q.header}
-            </div>
-            <div className="text-sm font-medium text-foreground">{q.question}</div>
-            <div className="space-y-1">
-              <RadioGroup
-                value={draft.option}
-                onValueChange={(value) => onDraftChange(q.id, "option", value)}
-                className="space-y-1"
-              >
-                {q.options.map((opt, optionIndex) => {
-                  const optionId = `q-${q.id}-opt-${optionIndex}`;
-                  return (
-                    <Label
-                      key={opt.label}
-                      htmlFor={optionId}
-                      className={`flex items-start gap-2.5 cursor-pointer p-2 rounded-lg transition-colors ${
-                        draft.option === opt.label
-                          ? "bg-muted text-foreground"
-                          : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <RadioGroupItem
-                        id={optionId}
-                        value={opt.label}
-                        className="mt-0.5 shrink-0"
-                      />
-                      <span className="text-sm">
-                        <span className="font-medium">{opt.label}</span>
-                        {opt.description && (
-                          <span className="block text-xs text-muted-foreground/70 mt-0.5">
-                            {opt.description}
-                          </span>
-                        )}
-                      </span>
-                    </Label>
-                  );
-                })}
-              </RadioGroup>
-            </div>
-            {q.isOther && (
-              <Input
-                type={q.isSecret ? "password" : "text"}
-                value={draft.freeform}
-                onChange={(e) => onDraftChange(q.id, "freeform", e.target.value)}
-                placeholder="Free-form answer…"
-                className="h-8 bg-background text-sm"
-              />
-            )}
-          </div>
-        );
-      })}
-
-      <div className="flex gap-2 pt-1">
-        <Button
-          type="button"
-          onClick={onSkip}
-          disabled={isBusy}
-          variant="outline"
-          size="sm"
-          className="h-8 text-xs"
-        >
-          Skip
-        </Button>
-        <Button
-          type="button"
-          onClick={onSubmit}
-          disabled={isBusy}
-          size="sm"
-          className="h-8 text-xs"
-        >
-          Submit
-        </Button>
-      </div>
-    </motion.div>
-  );
-}
-
 /* ── Main App ───────────────────────────────────────────────── */
 export function App(): React.JSX.Element {
   const { theme, toggle: toggleTheme } = useTheme();
@@ -483,7 +320,6 @@ export function App(): React.JSX.Element {
   const [streamEvents, setStreamEvents] = useState<StreamEventsResponse["events"]>([]);
   const [modes, setModes] = useState<ModesResponse["data"]>([]);
   const [models, setModels] = useState<ModelsResponse["data"]>([]);
-  const [hasMessageDraft, setHasMessageDraft] = useState(false);
   const [selectedModeKey, setSelectedModeKey] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState("");
@@ -517,9 +353,6 @@ export function App(): React.JSX.Element {
   const coreRefreshIntervalRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const chatContentRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const resizeFrameRef = useRef<number | null>(null);
-  const previousTextareaHeightRef = useRef(0);
   const lastAppliedModeSignatureRef = useRef("");
 
   /* Derived */
@@ -923,78 +756,20 @@ export function App(): React.JSX.Element {
     };
   }, [conversationState, selectedThreadId, suppressEntryAnimations]);
 
-  const resizeComposerTextarea = useCallback(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) {
-      return;
-    }
-
-    const maxHeight = 200;
-    textarea.style.height = "auto";
-    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
-    const currentHeight = previousTextareaHeightRef.current;
-
-    if (currentHeight <= 0) {
-      textarea.style.height = `${nextHeight}px`;
-      previousTextareaHeightRef.current = nextHeight;
-      return;
-    }
-
-    if (nextHeight === currentHeight) {
-      textarea.style.height = `${nextHeight}px`;
-      return;
-    }
-
-    textarea.style.height = `${currentHeight}px`;
-
-    if (resizeFrameRef.current !== null) {
-      window.cancelAnimationFrame(resizeFrameRef.current);
-    }
-
-    resizeFrameRef.current = window.requestAnimationFrame(() => {
-      if (!textareaRef.current) {
-        return;
-      }
-      textareaRef.current.style.height = `${nextHeight}px`;
-      resizeFrameRef.current = null;
-    });
-    previousTextareaHeightRef.current = nextHeight;
-  }, []);
-
-  // Auto-resize textarea
-  useEffect(() => {
-    resizeComposerTextarea();
-  }, [resizeComposerTextarea]);
-
-  useEffect(() => {
-    return () => {
-      if (resizeFrameRef.current !== null) {
-        window.cancelAnimationFrame(resizeFrameRef.current);
-      }
-    };
-  }, []);
-
   /* Actions */
-  const submitMessage = useCallback(async () => {
-    const draft = textareaRef.current?.value ?? "";
+  const submitMessage = useCallback(async (draft: string) => {
     if (!selectedThreadId || !draft.trim()) return;
     setIsBusy(true);
     try {
       setError("");
       await sendMessage({ threadId: selectedThreadId, text: draft });
-      if (textareaRef.current) {
-        textareaRef.current.value = "";
-      }
-      setHasMessageDraft(false);
-      previousTextareaHeightRef.current = 0;
-      resizeComposerTextarea();
       await refreshAll();
     } catch (e) {
       setError(toErrorMessage(e));
     } finally {
       setIsBusy(false);
     }
-  }, [refreshAll, resizeComposerTextarea, selectedThreadId]);
+  }, [refreshAll, selectedThreadId]);
 
   const applyModeDraft = useCallback(async (draft: {
     modeKey: string;
@@ -1486,54 +1261,13 @@ export function App(): React.JSX.Element {
 
                 {/* Composer */}
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-end gap-2 rounded-[28px] border border-border bg-card pl-4 pr-2.5 py-2.5 focus-within:border-muted-foreground/40 transition-colors">
-                    <Textarea
-                      ref={textareaRef}
-                      onChange={(e) => {
-                        const nextValue = e.target.value;
-                        setHasMessageDraft(nextValue.trim().length > 0);
-                        resizeComposerTextarea();
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                          e.preventDefault();
-                          void submitMessage();
-                        }
-                      }}
-                      placeholder="Message Codex…"
-                      rows={1}
-                      className="flex-1 min-h-9 max-h-[200px] resize-none overflow-y-auto border-0 bg-transparent px-0 py-2 text-sm leading-5 shadow-none transition-[height] duration-120 ease-out focus-visible:ring-0"
-                    />
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        if (isGenerating) {
-                          void runInterrupt();
-                          return;
-                        }
-                        void submitMessage();
-                      }}
-                      disabled={
-                        isGenerating
-                          ? !selectedThreadId || isBusy
-                          : !selectedThreadId || isBusy || !hasMessageDraft
-                      }
-                      size="icon"
-                      className={`h-9 w-9 shrink-0 self-end rounded-full disabled:opacity-30 ${
-                        isGenerating
-                          ? "bg-destructive text-destructive-foreground hover:bg-destructive/85"
-                          : "bg-foreground text-background hover:bg-foreground/80"
-                      }`}
-                    >
-                      {isGenerating ? (
-                        <CirclePause size={13} />
-                      ) : isBusy ? (
-                        <Loader2 size={13} className="animate-spin" />
-                      ) : (
-                        <ArrowUp size={13} />
-                      )}
-                    </Button>
-                  </div>
+                  <ChatComposer
+                    canSend={Boolean(selectedThreadId)}
+                    isBusy={isBusy}
+                    isGenerating={isGenerating}
+                    onInterrupt={runInterrupt}
+                    onSend={submitMessage}
+                  />
 
                   {/* Toolbar */}
                   <div className="flex items-center gap-1 min-w-0 overflow-x-auto overflow-y-hidden whitespace-nowrap">
