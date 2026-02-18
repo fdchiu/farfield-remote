@@ -962,185 +962,175 @@ export function App(): React.JSX.Element {
 
   const renderSidebarContent = (viewport: "desktop" | "mobile"): React.JSX.Element => (
     <>
-      <div className="flex items-center justify-between px-4 h-14 border-b border-sidebar-border shrink-0">
-        <span className="text-sm font-semibold">Farfield</span>
-        <div className="flex items-center gap-1">
-          {viewport === "desktop" && (
-            <IconBtn onClick={() => setDesktopSidebarOpen(false)} title="Hide sidebar">
-              <PanelLeft size={15} />
-            </IconBtn>
-          )}
-          {viewport === "mobile" && (
-            <Button
-              type="button"
-              onClick={() => setMobileSidebarOpen(false)}
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
-            >
-              <X size={14} />
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 pl-2 pr-0">
-        {threads.length === 0 && (
-          <div className="px-4 py-6 text-xs text-muted-foreground text-center space-y-3">
-            <div>No threads</div>
-            {availableAgents.length > 0 && (
+      <div className="relative z-20 h-14 shrink-0 px-4">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 -bottom-3 bg-gradient-to-b from-sidebar from-58% via-sidebar/88 via-80% to-transparent to-100%"
+        />
+        <div className="relative z-10 flex items-center justify-between h-full">
+          <span className="text-sm font-semibold">Farfield</span>
+          <div className="flex items-center gap-1">
+            {viewport === "desktop" && (
+              <IconBtn onClick={() => setDesktopSidebarOpen(false)} title="Hide sidebar">
+                <PanelLeft size={15} />
+              </IconBtn>
+            )}
+            {viewport === "mobile" && (
               <Button
                 type="button"
-                variant="outline"
-                size="sm"
-                className="rounded-full"
-                disabled={isBusy}
-                onClick={() => {
-                  void createNewThread(".", selectedAgentKind);
-                }}
+                onClick={() => setMobileSidebarOpen(false)}
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
               >
-                <Plus size={13} className="mr-1.5" />
-                New {selectedAgentKind === "opencode" ? "OpenCode" : "Codex"} thread
+                <X size={14} />
               </Button>
             )}
           </div>
-        )}
-        <div className="space-y-2 pr-2">
-          {groupedThreads.map((group) => {
-            const hasSelectedThread = group.threads.some((thread) => thread.id === selectedThreadId);
-            const isCollapsed = hasSelectedThread ? false : Boolean(sidebarCollapsedGroups[group.key]);
-            return (
-              <div key={group.key} className="space-y-1">
-                <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    onClick={() =>
-                      setSidebarCollapsedGroups((prev) => ({
-                        ...prev,
-                        [group.key]: !isCollapsed
-                      }))
-                    }
-                    variant="ghost"
-                    className="h-6 flex-1 justify-start gap-2 rounded-lg px-2 py-1 text-left text-[13px] tracking-tight font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                  >
-                    {isCollapsed ? (
-                      <Folder size={13} className="shrink-0" />
-                    ) : (
-                      <FolderOpen size={13} className="shrink-0" />
-                    )}
-                    <span className="min-w-0 truncate">{group.label}</span>
-                  </Button>
-                  <IconBtn
-                    onClick={() => {
-                      if (!group.projectPath) {
-                        return;
-                      }
-                      void createNewThread(group.projectPath, selectedAgentKind);
-                    }}
-                    title={
-                      group.projectPath
-                        ? `New ${selectedAgentKind} thread in ${group.label}`
-                        : "Cannot create thread: missing project path"
-                    }
-                    disabled={isBusy || !group.projectPath}
-                  >
-                    <Plus size={14} />
-                  </IconBtn>
-                </div>
-                <AnimatePresence initial={false}>
-                  {!isCollapsed && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.16, ease: "easeInOut" }}
-                      className="overflow-hidden"
-                    >
-                      <div className="space-y-1 pl-4 pt-0.5">
-                        {group.threads.map((thread) => {
-                          const isSelected = thread.id === selectedThreadId;
-                          return (
-                            <Button
-                              key={thread.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedThreadId(thread.id);
-                                setMobileSidebarOpen(false);
-                              }}
-                              variant="ghost"
-                              className={`w-full min-w-0 h-auto flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left text-[13px] tracking-tight font-normal transition-colors ${
-                                isSelected
-                                  ? "bg-muted/90 text-foreground shadow-sm"
-                                  : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                              }`}
-                            >
-                              <span className="min-w-0 flex-1 flex items-center gap-1.5 truncate leading-5">
-                                {(thread as Thread & { agentKind?: string }).agentKind === "opencode" && (
-                                  <span className="shrink-0 text-[9px] px-1 py-0 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium leading-4">
-                                    OC
-                                  </span>
-                                )}
-                                <span className="truncate">{threadLabel(thread)}</span>
-                              </span>
-                              {thread.updatedAt && (
-                                <span className="shrink-0 text-[10px] text-muted-foreground/50">
-                                  {formatDate(thread.updatedAt)}
-                                </span>
-                              )}
-                            </Button>
-                          );
-                        })}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            );
-          })}
         </div>
       </div>
 
-      <div className="p-3 border-t border-sidebar-border shrink-0 flex items-center justify-between gap-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted/40 transition-colors cursor-default min-w-0">
-              <span
-                className={`h-2 w-2 rounded-full shrink-0 ${
-                  allSystemsReady
-                    ? "bg-success"
-                    : hasAnySystemFailure
-                      ? "bg-danger"
-                      : "bg-muted-foreground/40"
-                }`}
-              />
-              <span className="font-mono truncate">commit {commitLabel}</span>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="top" align="start" className="space-y-1 text-xs">
-            <div className="font-mono text-[11px]">commit {commitLabel}</div>
-            <div>App: {health?.state.appReady ? "ok" : "not ready"}</div>
-            <div>IPC: {health?.state.ipcConnected ? "connected" : "disconnected"}</div>
-            <div>Init: {health?.state.ipcInitialized ? "ready" : "not ready"}</div>
-            {health?.state.lastError && (
-              <div className="max-w-64 break-words text-destructive">
-                Error: {health.state.lastError}
+      <div className="relative flex-1 min-h-0">
+        <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden py-2 pl-2 pr-0">
+          {threads.length === 0 && (
+            <div className="px-4 py-6 text-xs text-muted-foreground text-center">No threads</div>
+          )}
+          <div className="space-y-2 pr-2">
+            {groupedThreads.map((group) => {
+              const hasSelectedThread = group.threads.some((thread) => thread.id === selectedThreadId);
+              const isCollapsed = hasSelectedThread ? false : Boolean(sidebarCollapsedGroups[group.key]);
+              return (
+                <div key={group.key} className="space-y-1">
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      onClick={() =>
+                        setSidebarCollapsedGroups((prev) => ({
+                          ...prev,
+                          [group.key]: !isCollapsed
+                        }))
+                      }
+                      variant="ghost"
+                      className="h-6 flex-1 justify-start gap-2 rounded-lg px-2 py-1 text-left text-[13px] tracking-tight font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                    >
+                      {isCollapsed ? (
+                        <Folder size={13} className="shrink-0" />
+                      ) : (
+                        <FolderOpen size={13} className="shrink-0" />
+                      )}
+                      <span className="min-w-0 truncate">{group.label}</span>
+                    </Button>
+                    <IconBtn
+                      onClick={() => {
+                        if (!group.projectPath) {
+                          return;
+                        }
+                        void createNewThread(group.projectPath);
+                      }}
+                      title={
+                        group.projectPath
+                          ? `New thread in ${group.label}`
+                          : "Cannot create thread: missing project path"
+                      }
+                      disabled={isBusy || !group.projectPath}
+                    >
+                      <Plus size={14} />
+                    </IconBtn>
+                  </div>
+                  <AnimatePresence initial={false}>
+                    {!isCollapsed && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.16, ease: "easeInOut" }}
+                        className="overflow-hidden"
+                      >
+                        <div className="space-y-1 pl-4 pt-0.5">
+                          {group.threads.map((thread) => {
+                            const isSelected = thread.id === selectedThreadId;
+                            return (
+                              <Button
+                                key={thread.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedThreadId(thread.id);
+                                  setMobileSidebarOpen(false);
+                                }}
+                                variant="ghost"
+                                className={`w-full min-w-0 h-auto flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left text-[13px] tracking-tight font-normal transition-colors ${
+                                  isSelected
+                                    ? "bg-muted/90 text-foreground shadow-sm"
+                                    : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                                }`}
+                              >
+                                <span className="min-w-0 flex-1 truncate leading-5">{threadLabel(thread)}</span>
+                                {thread.updatedAt && (
+                                  <span className="shrink-0 text-[10px] text-muted-foreground/50">
+                                    {formatDate(thread.updatedAt)}
+                                  </span>
+                                )}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="relative z-20 shrink-0 p-3">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 -top-3 bottom-0 bg-gradient-to-t from-sidebar from-58% via-sidebar/88 via-80% to-transparent to-100%"
+        />
+        <div className="relative z-10 flex items-center justify-between gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted/40 transition-colors cursor-default min-w-0">
+                <span
+                  className={`h-2 w-2 rounded-full shrink-0 ${
+                    allSystemsReady
+                      ? "bg-success"
+                      : hasAnySystemFailure
+                        ? "bg-danger"
+                        : "bg-muted-foreground/40"
+                  }`}
+                />
+                <span className="font-mono truncate">commit {commitLabel}</span>
               </div>
-            )}
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <a
-              href="https://github.com/achimala/farfield"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-            >
-              <Github size={14} />
-            </a>
-          </TooltipTrigger>
-          <TooltipContent side="top" align="end">GitHub</TooltipContent>
-        </Tooltip>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="start" className="space-y-1 text-xs">
+              <div className="font-mono text-[11px]">commit {commitLabel}</div>
+              <div>App: {health?.state.appReady ? "ok" : "not ready"}</div>
+              <div>IPC: {health?.state.ipcConnected ? "connected" : "disconnected"}</div>
+              <div>Init: {health?.state.ipcInitialized ? "ready" : "not ready"}</div>
+              {health?.state.lastError && (
+                <div className="max-w-64 break-words text-destructive">
+                  Error: {health.state.lastError}
+                </div>
+              )}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <a
+                href="https://github.com/achimala/farfield"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+              >
+                <Github size={14} />
+              </a>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="end">GitHub</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
     </>
   );
@@ -1198,13 +1188,19 @@ export function App(): React.JSX.Element {
 
       {/* ── Main area ───────────────────────────────────────── */}
       <div
-        className={`flex-1 flex flex-col min-w-0 transition-[margin] duration-200 ${
+        className={`relative flex-1 flex flex-col min-w-0 transition-[margin] duration-200 ${
           desktopSidebarOpen ? "md:ml-64" : "md:ml-0"
         }`}
       >
 
         {/* Header */}
-        <header className="flex items-center justify-between px-3 h-14 border-b border-border shrink-0 gap-2">
+        <header
+          className={`flex items-center justify-between px-3 h-14 shrink-0 gap-2 ${
+            activeTab === "chat"
+              ? "absolute inset-x-0 top-0 z-20 bg-transparent"
+              : "border-b border-border"
+          }`}
+        >
           <div className="flex items-center gap-2 min-w-0">
             <div className="md:hidden">
               <IconBtn onClick={() => setMobileSidebarOpen(true)} title="Threads">
@@ -1285,6 +1281,10 @@ export function App(): React.JSX.Element {
         {/* ── Chat tab ──────────────────────────────────────── */}
         {activeTab === "chat" && (
           <div className="relative flex-1 flex flex-col min-h-0">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 -top-4 z-10 h-[5.5rem] bg-gradient-to-b from-background from-52% via-background/78 via-82% to-transparent to-100%"
+            />
 
             {/* Conversation */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto">
@@ -1386,8 +1386,12 @@ export function App(): React.JSX.Element {
             </AnimatePresence>
 
             {/* Input area */}
-            <div className="border-t border-border px-4 py-4 shrink-0">
-              <div className="max-w-3xl mx-auto space-y-2">
+            <div className="relative z-10 -mt-6 px-4 pt-6 pb-4 shrink-0">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-transparent via-background/85 to-background"
+              />
+              <div className="relative max-w-3xl mx-auto space-y-2">
 
                 {/* Pending user input (Codex only) */}
                 <AnimatePresence>
