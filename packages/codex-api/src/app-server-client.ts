@@ -170,4 +170,11 @@ export class AppServerClient {
     const result = await this.transport.request("sendUserMessage", request);
     parseWithSchema(AppServerSendUserMessageResponseSchema, result, "AppServerSendUserMessageResponse");
   }
+
+  public async resumeThread(threadId: string): Promise<void> {
+    await this.transport.request("thread/resume", {
+      threadId,
+      persistExtendedHistory: false
+    });
+  }
 }

@@ -206,6 +206,19 @@ export class CodexAgentAdapter implements AgentAdapter {
     return error.message.includes("thread not loaded");
   }
 
+  private isThreadUnavailableForSendError(error: unknown): boolean {
+    if (!(error instanceof AppServerRpcError)) {
+      return false;
+    }
+
+    if (error.code !== -32600) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+    return message.includes("conversation not found") || message.includes("thread not loaded");
+  }
+
   public isEnabled(): boolean {
     return true;
   }
@@ -323,6 +336,19 @@ export class CodexAgentAdapter implements AgentAdapter {
     if (input.isSteering === true) {
       throw new Error("Steering messages are not supported on this endpoint.");
     }
+
+    try {
+      await this.runAppServerCall(() =>
+        this.appClient.sendUserMessage(input.threadId, input.text)
+      );
+      return;
+    } catch (error) {
+      if (!this.isThreadUnavailableForSendError(error)) {
+        throw error;
+      }
+    }
+
+    await this.runAppServerCall(() => this.appClient.resumeThread(input.threadId));
     await this.runAppServerCall(() =>
       this.appClient.sendUserMessage(input.threadId, input.text)
     );
