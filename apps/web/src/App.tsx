@@ -162,6 +162,10 @@ function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function isTurnGeneratingStatus(status: string | null | undefined): boolean {
+  return status === "in-progress" || status === "inProgress";
+}
+
 function shouldRenderConversationItem(item: ConversationTurnItem): boolean {
   switch (item.type) {
     case "userMessage":
@@ -699,7 +703,7 @@ export function App(): React.JSX.Element {
   const deferredConversationState = useDeferredValue(conversationState);
   const turns = deferredConversationState?.turns ?? [];
   const lastTurn = turns[turns.length - 1];
-  const isGenerating = lastTurn?.status === "in-progress";
+  const isGenerating = isTurnGeneratingStatus(lastTurn?.status);
   const flatConversationItems = useMemo(() => {
     const flattened: FlatConversationItem[] = [];
     let previousRenderedTurnIndex = -1;
@@ -958,6 +962,20 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     selectedThreadIdRef.current = selectedThreadId;
   }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (!isGenerating || !selectedThreadId) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadSelectedThread(selectedThreadId).catch((e) => setError(toErrorMessage(e)));
+    }, 1200);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isGenerating, loadSelectedThread, selectedThreadId]);
 
   useEffect(() => {
     activeTabRef.current = activeTab;

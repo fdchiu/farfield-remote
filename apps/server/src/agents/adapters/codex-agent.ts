@@ -216,7 +216,9 @@ export class CodexAgentAdapter implements AgentAdapter {
     }
 
     const message = error.message.toLowerCase();
-    return message.includes("conversation not found") || message.includes("thread not loaded");
+    return message.includes("conversation not found")
+      || message.includes("thread not found")
+      || message.includes("thread not loaded");
   }
 
   public isEnabled(): boolean {
@@ -339,7 +341,7 @@ export class CodexAgentAdapter implements AgentAdapter {
 
     try {
       await this.runAppServerCall(() =>
-        this.appClient.sendUserMessage(input.threadId, input.text)
+        this.appClient.startTurn(input.threadId, input.text)
       );
       return;
     } catch (error) {
@@ -350,7 +352,7 @@ export class CodexAgentAdapter implements AgentAdapter {
 
     await this.runAppServerCall(() => this.appClient.resumeThread(input.threadId));
     await this.runAppServerCall(() =>
-      this.appClient.sendUserMessage(input.threadId, input.text)
+      this.appClient.startTurn(input.threadId, input.text)
     );
   }
 

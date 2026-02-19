@@ -11,7 +11,9 @@ import {
   AppServerSendUserMessageResponseSchema,
   type AppServerStartThreadResponse,
   AppServerStartThreadRequestSchema,
-  AppServerStartThreadResponseSchema
+  AppServerStartThreadResponseSchema,
+  ThreadTurnSchema,
+  TurnStartParamsSchema
 } from "@farfield/protocol";
 import { ProtocolValidationError } from "@farfield/protocol";
 import { z } from "zod";
@@ -32,6 +34,12 @@ function parseWithSchema<T>(
   }
   return parsed.data;
 }
+
+const AppServerTurnStartResponseSchema = z
+  .object({
+    turn: ThreadTurnSchema
+  })
+  .passthrough();
 
 export interface ListThreadsOptions {
   limit: number;
@@ -169,6 +177,21 @@ export class AppServerClient {
     });
     const result = await this.transport.request("sendUserMessage", request);
     parseWithSchema(AppServerSendUserMessageResponseSchema, result, "AppServerSendUserMessageResponse");
+  }
+
+  public async startTurn(threadId: string, text: string): Promise<void> {
+    const request = TurnStartParamsSchema.parse({
+      threadId,
+      input: [
+        {
+          type: "text",
+          text
+        }
+      ]
+    });
+
+    const result = await this.transport.request("turn/start", request);
+    parseWithSchema(AppServerTurnStartResponseSchema, result, "AppServerTurnStartResponse");
   }
 
   public async resumeThread(threadId: string): Promise<void> {

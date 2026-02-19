@@ -448,6 +448,17 @@ function resolveAdapterForThread(threadId: string):
   | { ok: false; status: number; error: string } {
   const registeredAgentId = threadIndex.resolve(threadId);
   if (!registeredAgentId) {
+    const enabledAdapters = registry.listEnabled();
+    if (enabledAdapters.length === 1) {
+      const fallback = enabledAdapters[0]!;
+      threadIndex.register(threadId, fallback.id);
+      return {
+        ok: true,
+        adapter: fallback,
+        agentId: fallback.id
+      };
+    }
+
     return {
       ok: false,
       status: 404,

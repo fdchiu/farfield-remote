@@ -297,6 +297,18 @@ export const UserInputRequestSchema = z
   })
   .passthrough();
 
+export const ThreadRequestSchema = z.union([
+  UserInputRequestSchema,
+  z
+    .object({
+      method: NonEmptyStringSchema,
+      id: z.union([NonNegativeIntSchema, NonEmptyStringSchema]).optional(),
+      params: JsonValueSchema.optional(),
+      completed: z.boolean().optional()
+    })
+    .passthrough()
+]);
+
 export const ThreadTurnSchema = z
   .object({
     params: TurnStartParamsSchema.optional(),
@@ -315,7 +327,7 @@ export const ThreadConversationStateSchema = z
   .object({
     id: NonEmptyStringSchema,
     turns: z.array(ThreadTurnSchema),
-    requests: z.array(UserInputRequestSchema).default([]),
+    requests: z.array(ThreadRequestSchema).default([]),
     createdAt: NonNegativeIntSchema.optional(),
     updatedAt: NonNegativeIntSchema.optional(),
     title: NullableStringSchema.optional(),

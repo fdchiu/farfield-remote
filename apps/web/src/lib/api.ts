@@ -394,10 +394,16 @@ export function getPendingUserInputRequests(
     return [];
   }
 
-  return conversationState.requests.filter((request) => {
-    if (request.method !== "item/tool/requestUserInput") {
-      return false;
+  const pending: z.infer<typeof UserInputRequestSchema>[] = [];
+  for (const request of conversationState.requests) {
+    const parsed = UserInputRequestSchema.safeParse(request);
+    if (!parsed.success) {
+      continue;
     }
-    return request.completed !== true;
-  });
+    if (parsed.data.completed === true) {
+      continue;
+    }
+    pending.push(parsed.data);
+  }
+  return pending;
 }
